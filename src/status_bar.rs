@@ -20,7 +20,7 @@ impl StatusBar {
         let font_height = 20;
         let padding = 4;
         let height = font_height + padding;
-        
+
         Self {
             height,
             background_color: Rgb888::new(40, 40, 40), // Dark gray
@@ -45,7 +45,7 @@ impl StatusBar {
             Point::new(0, (target_height - self.height) as i32),
             Size::new(width, self.height),
         );
-        
+
         bg_rect
             .into_styled(PrimitiveStyle::with_fill(self.background_color))
             .draw(target)
@@ -54,29 +54,29 @@ impl StatusBar {
         // Prepare text
         // Left: Path
         let left_text = path;
-        
+
         // Right: "100% 1/23"
         let right_text = format!("{}% {}/{}", scale_percent, index, total);
 
         // Center text vertically
-        // Font baseline is usually near bottom. 
+        // Font baseline is usually near bottom.
         // For FONT_10X20, character size is 10x20.
-        // We have height 24. 
+        // We have height 24.
         // y position for Text is the top-left of the text bounding box (for standard fonts in embedded-graphics 0.8?).
         // Wait, embedded-graphics text position depends on alignment.
         // But usually Point specifies the "top-left" of the first character's bounding box?
         // No, docs say: "The position of the text is specified by the top-left corner of the text."
-        
+
         // So we want to center 20px text in 24px box.
         // Top padding = (24 - 20) / 2 = 2px.
         // y = (target_height - height) + padding_top
-        
+
         let bar_top = (target_height - self.height) as i32;
         let text_y = bar_top + 2 + 15; // +15 is a guess for baseline?
-        // Actually embedded-graphics `Text` draws from top-left.
-        // `CharacterStyle` defines how it draws.
-        // `MonoTextStyle` draws from top-left.
-        
+                                       // Actually embedded-graphics `Text` draws from top-left.
+                                       // `CharacterStyle` defines how it draws.
+                                       // `MonoTextStyle` draws from top-left.
+
         let text_pos_y = bar_top + 2; // 2px padding from top
 
         // Draw Left Text (Path)
@@ -95,7 +95,6 @@ impl StatusBar {
             // Let's use `baseline` variable from previous code which seemed to work for 6x10.
             // previous: `baseline = (target_height as i32 - padding_y) - 2;`
             // padding_y was `(height - font_height) / 2`.
-            
             self.font_style,
             Alignment::Left,
         )

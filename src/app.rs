@@ -15,6 +15,7 @@ use winit::window::{Window, WindowId};
 #[derive(Debug)]
 pub enum AppEvent {
     ImageLoaded(ImageItem),
+    LoadComplete,
 }
 
 pub struct App {
@@ -34,10 +35,11 @@ pub struct App {
 
     // Input state
     pub modifiers: ModifiersState,
-    
+
     // UI
     pub status_bar: StatusBar,
     pub show_status_bar: bool,
+    pub load_complete: bool,
 }
 
 impl App {
@@ -57,9 +59,10 @@ impl App {
             modifiers: ModifiersState::default(),
             status_bar: StatusBar::new(),
             show_status_bar: true,
+            load_complete: false,
         }
     }
-    
+
     fn get_available_window_size(&self) -> Option<(f64, f64)> {
         if let Some(w) = &self.window {
             let s = w.inner_size();
@@ -74,14 +77,16 @@ impl App {
     }
 
     fn get_current_scale(&self) -> f64 {
-        if self.images.is_empty() { return 1.0; }
+        if self.images.is_empty() {
+            return 1.0;
+        }
         let item = &self.images[self.current_index];
         let (buf_w, buf_h) = if let Some((w, h)) = self.get_available_window_size() {
             (w, h)
         } else {
             return 1.0;
         };
-        
+
         // Safety check to avoid division by zero
         if buf_w <= 0.0 || buf_h <= 0.0 {
             return 1.0;
@@ -107,15 +112,15 @@ impl App {
 
     fn update_title(&self) {
         if let Some(w) = &self.window {
-             if let Some(_item) = self.images.get(self.current_index) {
+            if let Some(_item) = self.images.get(self.current_index) {
                 // Simplified title since we have status bar
                 w.set_title("rsiv");
-             } else {
-                 w.set_title("rsiv - No images");
-             }
+            } else {
+                w.set_title("rsiv - No images");
+            }
         }
     }
-    
+
     fn reset_view_for_new_image(&mut self) {
         self.off_x = 0;
         self.off_y = 0;
@@ -126,8 +131,10 @@ impl App {
     }
 
     fn render(&mut self) {
-        if self.images.is_empty() { return; }
-        
+        if self.images.is_empty() {
+            return;
+        }
+
         // Animation Logic
         let now = Instant::now();
         let dt = now.duration_since(self.last_update);
@@ -147,7 +154,7 @@ impl App {
             };
 
             if self.frame_timer >= effective_delay {
-                self.frame_timer = Duration::ZERO; 
+                self.frame_timer = Duration::ZERO;
                 self.current_frame_index = (self.current_frame_index + 1) % frame_count;
             }
             if let Some(w) = &self.window {
@@ -158,7 +165,7 @@ impl App {
         }
 
         let scale = self.get_current_scale();
-        
+
         let Some(pixels) = &mut self.pixels else {
             return;
         };
@@ -183,12 +190,12 @@ impl App {
         } else {
             buf_h
         };
-        
+
         if available_h <= 0 {
             // Draw status bar only if possible
             if self.show_status_bar && buf_h > 0 {
-                 let mut fb = FrameBuffer::new(frame, buf_w as u32, buf_h as u32);
-                 self.status_bar.draw(
+                let mut fb = FrameBuffer::new(frame, buf_w as u32, buf_h as u32);
+                self.status_bar.draw(
                     &mut fb,
                     (scale * 100.0) as u32,
                     self.current_index + 1,
@@ -197,7 +204,7 @@ impl App {
                 );
             }
             if let Err(err) = pixels.render() {
-                 eprintln!("Pixels render error: {}", err);
+                eprintln!("Pixels render error: {}", err);
             }
             return;
         }
@@ -252,7 +259,7 @@ impl App {
                 }
             }
         }
-        
+
         // Draw Status Bar if enabled
         if self.show_status_bar {
             let mut fb = FrameBuffer::new(frame, buf_w as u32, buf_h as u32);
@@ -288,18 +295,18 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.window = Some(window);
         self.pixels = Some(pixels);
-        
+
         // If we already have images (from constructor, though now we plan to start empty), update
         if !self.images.is_empty() {
-             self.update_title();
+            self.update_title();
         }
     }
-    
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::ImageLoaded(item) => {
                 self.images.push(item);
-                
+
                 // If this is the first image, render it immediately
                 if self.images.len() == 1 {
                     self.current_index = 0;
@@ -310,6 +317,13 @@ impl ApplicationHandler<AppEvent> for App {
                 } else {
                     // Update title to show count if window exists
                     self.update_title();
+                }
+            }
+            AppEvent::LoadComplete => {
+                self.load_complete = true;
+                if self.images.is_empty() {
+                    // No images loaded, exit
+                    event_loop.exit();
                 }
             }
         }
@@ -359,23 +373,50 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.off_y = 0;
                                     needs_redraw = true;
                                 }
-                                "f" => { self.mode = ViewMode::FitToWindow; needs_redraw = true; }
-                                "F" => { self.mode = ViewMode::BestFit; needs_redraw = true; }
-                                "W" => { self.mode = ViewMode::FitWidth; needs_redraw = true; }
-                                "H" => { self.mode = ViewMode::FitHeight; needs_redraw = true; }
-                                "h" => { self.off_x += step; needs_redraw = true; }
-                                "l" => { self.off_x -= step; needs_redraw = true; }
-                                "k" => { self.off_y += step; needs_redraw = true; }
-                                "j" => { self.off_y -= step; needs_redraw = true; }
-                                "b" => { 
+                                "f" => {
+                                    self.mode = ViewMode::FitToWindow;
+                                    needs_redraw = true;
+                                }
+                                "F" => {
+                                    self.mode = ViewMode::BestFit;
+                                    needs_redraw = true;
+                                }
+                                "W" => {
+                                    self.mode = ViewMode::FitWidth;
+                                    needs_redraw = true;
+                                }
+                                "H" => {
+                                    self.mode = ViewMode::FitHeight;
+                                    needs_redraw = true;
+                                }
+                                "h" => {
+                                    self.off_x += step;
+                                    needs_redraw = true;
+                                }
+                                "l" => {
+                                    self.off_x -= step;
+                                    needs_redraw = true;
+                                }
+                                "k" => {
+                                    self.off_y += step;
+                                    needs_redraw = true;
+                                }
+                                "j" => {
+                                    self.off_y -= step;
+                                    needs_redraw = true;
+                                }
+                                "b" => {
                                     self.show_status_bar = !self.show_status_bar;
                                     // If we are in a fit mode that depends on height, re-centering or re-scaling might happen
                                     // implicitly by get_current_scale being called in render.
                                     // If we are in a mode where offset matters, we might want to adjust offset?
                                     // For now, simply redrawing handles scale update.
-                                    needs_redraw = true; 
+                                    needs_redraw = true;
                                 }
-                                "=" => { self.mode = ViewMode::Absolute; needs_redraw = true; }
+                                "=" => {
+                                    self.mode = ViewMode::Absolute;
+                                    needs_redraw = true;
+                                }
                                 "+" => {
                                     self.mode = ViewMode::Zoom(old_scale * 1.1);
                                     changed_scale = true;
@@ -386,14 +427,31 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "n" => {
                                     if !self.images.is_empty() {
-                                        self.current_index = (self.current_index + 1) % self.images.len();
+                                        self.current_index =
+                                            (self.current_index + 1) % self.images.len();
                                         self.reset_view_for_new_image();
                                         needs_redraw = true;
                                     }
                                 }
                                 "p" => {
                                     if !self.images.is_empty() {
-                                        self.current_index = (self.current_index + self.images.len() - 1) % self.images.len();
+                                        self.current_index =
+                                            (self.current_index + self.images.len() - 1)
+                                                % self.images.len();
+                                        self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
+                                ">" => {
+                                    if !self.images.is_empty() {
+                                        self.images[self.current_index].rotate(true);
+                                        self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
+                                "<" => {
+                                    if !self.images.is_empty() {
+                                        self.images[self.current_index].rotate(false);
                                         self.reset_view_for_new_image();
                                         needs_redraw = true;
                                     }
@@ -401,10 +459,22 @@ impl ApplicationHandler<AppEvent> for App {
                                 _ => return,
                             },
                             Key::Named(k) => match k {
-                                NamedKey::ArrowLeft => { self.off_x += step; needs_redraw = true; }
-                                NamedKey::ArrowRight => { self.off_x -= step; needs_redraw = true; }
-                                NamedKey::ArrowUp => { self.off_y += step; needs_redraw = true; }
-                                NamedKey::ArrowDown => { self.off_y -= step; needs_redraw = true; }
+                                NamedKey::ArrowLeft => {
+                                    self.off_x += step;
+                                    needs_redraw = true;
+                                }
+                                NamedKey::ArrowRight => {
+                                    self.off_x -= step;
+                                    needs_redraw = true;
+                                }
+                                NamedKey::ArrowUp => {
+                                    self.off_y += step;
+                                    needs_redraw = true;
+                                }
+                                NamedKey::ArrowDown => {
+                                    self.off_y -= step;
+                                    needs_redraw = true;
+                                }
                                 _ => return,
                             },
                             _ => return,
@@ -419,7 +489,7 @@ impl ApplicationHandler<AppEvent> for App {
                     }
 
                     if needs_redraw {
-                         if let Some(w) = &self.window {
+                        if let Some(w) = &self.window {
                             // Clamping logic
                             let size = w.inner_size();
                             let buf_w = size.width as i32;
@@ -429,7 +499,7 @@ impl ApplicationHandler<AppEvent> for App {
                             } else {
                                 size.height as i32
                             };
-                            
+
                             if !self.images.is_empty() {
                                 let item = &self.images[self.current_index];
                                 let scale = self.get_current_scale();
@@ -442,7 +512,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 self.off_x = self.off_x.max(-limit_x).min(limit_x);
                                 self.off_y = self.off_y.max(-limit_y).min(limit_y);
                             }
-                            
+
                             w.request_redraw();
                         }
                     }
@@ -452,3 +522,4 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 }
+

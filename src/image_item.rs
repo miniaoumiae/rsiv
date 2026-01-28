@@ -1,14 +1,10 @@
-use image::{AnimationDecoder, GenericImageView, ImageReader};
+use image::{AnimationDecoder, GenericImageView, ImageBuffer, ImageReader, Rgba};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::time::Duration;
 
 pub struct FrameData {
-    // Debug for Vec<u8> might be verbose, but it's fine for now or we can implement manual Debug
-    // to skip pixels. Let's just derive for simplicity as requested.
-    // Actually Vec<u8> debug output is huge.
-    // Let's implement manual Debug for FrameData to avoid dumping pixels.
     pub pixels: Vec<u8>,
     pub delay: Duration,
 }
@@ -31,70 +27,103 @@ pub struct ImageItem {
 }
 
 impl ImageItem {
-    pub fn from_path(path: &str) -> Self {
+    pub fn rotate(&mut self, clockwise: bool) {
+        let mut new_width = 0;
+        let mut new_height = 0;
+
+        for frame in &mut self.frames {
+            let pixels = std::mem::take(&mut frame.pixels);
+            if let Some(img_buf) =
+                ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(self.width, self.height, pixels)
+            {
+                let rotated = if clockwise {
+                    image::imageops::rotate90(&img_buf)
+                } else {
+                    image::imageops::rotate270(&img_buf)
+                };
+
+                new_width = rotated.width();
+                new_height = rotated.height();
+                frame.pixels = rotated.into_raw();
+            }
+        }
+
+        if new_width != 0 && new_height != 0 {
+            self.width = new_width;
+            self.height = new_height;
+        }
+    }
+
+    pub fn from_path(path: &str) -> Result<Self, String> {
         let path_obj = Path::new(path);
-        
-        // Detect format
-        let format = ImageReader::open(path_obj)
-            .expect("Failed to read image")
-            .format();
-        
+
+        // Use with_guessed_format to support files without extensions or wrong extensions
+        let reader = ImageReader::open(path_obj)
+            .map_err(|e| format!("Failed to open file: {}", e))?
+            .with_guessed_format()
+            .map_err(|e| format!("Failed to guess format: {}", e))?;
+
+        let format = reader.format();
         let mut frames = Vec::new();
         let width;
         let height;
 
         // Note: We prioritize GIF animation. Other formats could be added here.
         if Some(image::ImageFormat::Gif) == format {
-             let file = File::open(path_obj).expect("Failed to open file");
-             let decoder = image::codecs::gif::GifDecoder::new(BufReader::new(file)).expect("Failed to create GIF decoder");
-             let gif_frames = decoder.into_frames().collect_frames().expect("Failed to collect GIF frames");
-             
-             if !gif_frames.is_empty() {
-                 let first = gif_frames[0].buffer();
-                 width = first.width();
-                 height = first.height();
-                 
-                 for frame in gif_frames {
-                     let (numer, denom) = frame.delay().numer_denom_ms();
-                     
-                     // Let's rely on Duration::from_millis(numer / denom) if denom != 0
-                     let d = if denom == 0 {
-                         Duration::from_millis(100)
-                     } else {
-                         Duration::from_millis((numer as u64) / (denom as u64))
-                     };
+            // Re-open for the decoder because ImageReader consumes ownership or we want a buffered reader specifically for GifDecoder
+            // Actually, we can try to use the reader if possible, but GifDecoder takes a Read.
+            // Let's just open again safely.
+            let file = File::open(path_obj).map_err(|e| e.to_string())?;
+            let decoder = image::codecs::gif::GifDecoder::new(BufReader::new(file))
+                .map_err(|e| format!("Failed to create GIF decoder: {}", e))?;
+            
+            // collect_frames can fail
+            let gif_frames = decoder.into_frames().collect_frames().map_err(|e| format!("Failed to collect GIF frames: {}", e))?;
 
-                     frames.push(FrameData {
-                         pixels: frame.into_buffer().into_raw(),
-                         delay: d,
-                     });
-                 }
-             } else {
-                 // Empty GIF? Fallback
-                 let img = image::open(path).expect("Failed to open image");
-                 width = img.width();
-                 height = img.height();
-                 frames.push(FrameData {
-                     pixels: img.to_rgba8().into_raw(),
-                     delay: Duration::MAX,
-                 });
-             }
+            if !gif_frames.is_empty() {
+                let first = gif_frames[0].buffer();
+                width = first.width();
+                height = first.height();
+
+                for frame in gif_frames {
+                    let (numer, denom) = frame.delay().numer_denom_ms();
+                    let d = if denom == 0 {
+                        Duration::from_millis(100)
+                    } else {
+                        Duration::from_millis((numer as u64) / (denom as u64))
+                    };
+
+                    frames.push(FrameData {
+                        pixels: frame.into_buffer().into_raw(),
+                        delay: d,
+                    });
+                }
+            } else {
+                // Empty GIF? Fallback to static decode
+                let img = reader.decode().map_err(|e| format!("Failed to decode image: {}", e))?;
+                width = img.width();
+                height = img.height();
+                frames.push(FrameData {
+                    pixels: img.to_rgba8().into_raw(),
+                    delay: Duration::MAX,
+                });
+            }
         } else {
-             // Static image
-             let img = image::open(path).expect("Failed to open image");
-             width = img.width();
-             height = img.height();
-             frames.push(FrameData {
-                 pixels: img.to_rgba8().into_raw(),
-                 delay: Duration::MAX,
-             });
+            // Static image
+            let img = reader.decode().map_err(|e| format!("Failed to decode image: {}", e))?;
+            width = img.width();
+            height = img.height();
+            frames.push(FrameData {
+                pixels: img.to_rgba8().into_raw(),
+                delay: Duration::MAX,
+            });
         }
 
-        Self {
+        Ok(Self {
             path: path.to_string(),
             width,
             height,
             frames,
-        }
+        })
     }
 }
