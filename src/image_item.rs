@@ -1,4 +1,4 @@
-use image::{AnimationDecoder, GenericImageView, ImageBuffer, ImageReader, Rgba};
+use image::{AnimationDecoder, ImageBuffer, ImageReader, Rgba};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;

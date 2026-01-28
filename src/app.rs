@@ -320,8 +320,11 @@ impl ApplicationHandler<AppEvent> for App {
         // Title update will happen when images load or here if already loaded
         window.set_title("rsiv - Loading...");
 
-        self.window = Some(window);
+        self.window = Some(window.clone());
         self.pixels = Some(pixels);
+
+        let scale_factor = window.scale_factor();
+        self.status_bar.set_scale(scale_factor as f32);
 
         // If we already have images (from constructor, though now we plan to start empty), update
         if !self.images.is_empty() {
@@ -370,6 +373,12 @@ impl ApplicationHandler<AppEvent> for App {
                         let _ = pixels.resize_buffer(new_size.width, new_size.height);
                     }
                 }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.status_bar.set_scale(scale_factor as f32);
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }

@@ -68,6 +68,8 @@ cargo run --release -- ~/Pictures/Wa
 - [x] Basic image view modes (zoom, adjust width, adjust height, fit best)
 - [x] Basic status bar
 - [ ] Keybinds personalisation
+- [ ] Other view modes
 - [ ] UI personalisation
 - [ ] Thumbnail mode
 - [ ] Script handler support (C-x)
+- [ ] Mouse support
