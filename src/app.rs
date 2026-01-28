@@ -11,6 +11,23 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{Window, WindowId};
 
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+use winit::platform::wayland::WindowAttributesExtWayland;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+use winit::platform::x11::WindowAttributesExtX11;
+
 // Define the custom event
 #[derive(Debug)]
 pub enum AppEvent {
@@ -280,11 +297,21 @@ impl App {
 
 impl ApplicationHandler<AppEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = Arc::new(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
+        let mut attributes = Window::default_attributes().with_title("rsiv");
+
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ))]
+        {
+            attributes = WindowAttributesExtWayland::with_name(attributes, "rsiv", "rsiv");
+            attributes = WindowAttributesExtX11::with_name(attributes, "rsiv", "rsiv");
+        }
+
+        let window = Arc::new(event_loop.create_window(attributes).unwrap());
 
         let size = window.inner_size();
         let surface_texture = SurfaceTexture::new(size.width, size.height, window.clone());
