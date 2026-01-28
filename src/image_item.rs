@@ -68,7 +68,7 @@ impl ImageItem {
         let width;
         let height;
 
-        // Note: We prioritize GIF animation. Other formats could be added here.
+        // NOTE: We prioritize GIF animation. Other formats could be added here.
         if Some(image::ImageFormat::Gif) == format {
             // Re-open for the decoder because ImageReader consumes ownership or we want a buffered reader specifically for GifDecoder
             // Actually, we can try to use the reader if possible, but GifDecoder takes a Read.
@@ -76,9 +76,12 @@ impl ImageItem {
             let file = File::open(path_obj).map_err(|e| e.to_string())?;
             let decoder = image::codecs::gif::GifDecoder::new(BufReader::new(file))
                 .map_err(|e| format!("Failed to create GIF decoder: {}", e))?;
-            
+
             // collect_frames can fail
-            let gif_frames = decoder.into_frames().collect_frames().map_err(|e| format!("Failed to collect GIF frames: {}", e))?;
+            let gif_frames = decoder
+                .into_frames()
+                .collect_frames()
+                .map_err(|e| format!("Failed to collect GIF frames: {}", e))?;
 
             if !gif_frames.is_empty() {
                 let first = gif_frames[0].buffer();
@@ -100,7 +103,9 @@ impl ImageItem {
                 }
             } else {
                 // Empty GIF? Fallback to static decode
-                let img = reader.decode().map_err(|e| format!("Failed to decode image: {}", e))?;
+                let img = reader
+                    .decode()
+                    .map_err(|e| format!("Failed to decode image: {}", e))?;
                 width = img.width();
                 height = img.height();
                 frames.push(FrameData {
@@ -110,7 +115,9 @@ impl ImageItem {
             }
         } else {
             // Static image
-            let img = reader.decode().map_err(|e| format!("Failed to decode image: {}", e))?;
+            let img = reader
+                .decode()
+                .map_err(|e| format!("Failed to decode image: {}", e))?;
             width = img.width();
             height = img.height();
             frames.push(FrameData {

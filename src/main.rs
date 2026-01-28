@@ -20,9 +20,7 @@ fn main() {
     }
 
     // Create custom event loop
-    let event_loop = EventLoop::<AppEvent>::with_user_event()
-        .build()
-        .unwrap();
+    let event_loop = EventLoop::<AppEvent>::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();
 
     // Start with empty app
@@ -46,9 +44,8 @@ fn main() {
                         // Check if file (not dir) and try to load
                         if file_path.is_file() {
                             let file_path_str = file_path.to_string_lossy().to_string();
-                            
+
                             // Try to load regardless of extension, using ImageReader's guess
-                            // We do NOT check extension whitelist anymore.
                             match ImageItem::from_path(&file_path_str) {
                                 Ok(item) => {
                                     let _ = proxy.send_event(AppEvent::ImageLoaded(item));
@@ -79,3 +76,4 @@ fn main() {
 
     event_loop.run_app(&mut app).unwrap();
 }
+

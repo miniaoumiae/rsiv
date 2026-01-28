@@ -16,9 +16,7 @@
 
 ## Installation
 
-Ensure you have Rust and Cargo installed.
-
-```bash
+```sh
 cargo build --release
 ```
 
@@ -26,7 +24,7 @@ cargo build --release
 
 Run `rsiv` by providing one or more image paths or directories as arguments:
 
-```bash
+```sh
 cargo run --release -- <path_to_image_or_directory> [more_paths...]
 ```
 
@@ -73,4 +71,3 @@ cargo run --release -- ~/Pictures/Wa
 - [ ] UI personalisation
 - [ ] Thumbnail mode
 - [ ] Script handler support (C-x)
-
