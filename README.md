@@ -1,6 +1,6 @@
 # rsiv
 
-**rsiv** is a lightweight image viewer written in Rust. It aims to be a recreation of `nsxiv` with native Wayland support and a focus on performance and simplicity.
+**rsiv** is a lightweight image viewer written in Rust. It aims to be a recreation of `nsxiv` with native Wayland support and a real config.
 
 > [!NOTE]
 > This project is currently heavily work in progress.
@@ -62,14 +62,19 @@ cargo run --release -- ~/Pictures/Wa
 | `b`           | Toggle Status Bar                |
 | `Ctrl + a`    | Toggle Animation Playback        |
 
-## Roadmap
+## Features Roadmap
 
 - [x] Image rendering
 - [x] Basic image view modes (zoom, adjust width, adjust height, fit best)
 - [x] Basic status bar
+- [ ] svg support
 - [ ] Keybinds personalisation
+- [ ] command line arguments
 - [ ] Other view modes
 - [ ] UI personalisation
 - [ ] Thumbnail mode
 - [ ] Script handler support (C-x)
 - [ ] Mouse support
+- [ ] Adding color filter (Gamma and Brightness, ...)
+- [ ] Config hot reload
+- [ ] Images reload on change

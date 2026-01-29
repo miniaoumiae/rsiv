@@ -1,7 +1,9 @@
 mod app;
+mod config;
 mod frame_buffer;
 mod image_item;
 mod status_bar;
+mod utils;
 mod view_mode;
 
 use app::{App, AppEvent};
@@ -76,4 +78,3 @@ fn main() {
 
     event_loop.run_app(&mut app).unwrap();
 }
-

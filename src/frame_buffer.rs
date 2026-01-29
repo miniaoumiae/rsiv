@@ -24,18 +24,15 @@ impl<'a> FrameBuffer<'a> {
             return;
         }
 
+        let pixel = [r, g, b, 255];
         for cy in start_y..end_y {
             let row_start = (cy as u32 * self.width + start_x as u32) as usize * 4;
             let width_bytes = (end_x - start_x) as usize * 4;
             let row_end = row_start + width_bytes;
 
             if row_end <= self.frame.len() {
-                // Optimization: could fill directly, but loop is fine for now
                 for chunk in self.frame[row_start..row_end].chunks_exact_mut(4) {
-                    chunk[0] = r;
-                    chunk[1] = g;
-                    chunk[2] = b;
-                    chunk[3] = 255;
+                    chunk.copy_from_slice(&pixel);
                 }
             }
         }

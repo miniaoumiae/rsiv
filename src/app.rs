@@ -188,7 +188,16 @@ impl App {
         };
 
         let frame = pixels.frame_mut();
-        frame.fill(0);
+        let config = crate::config::AppConfig::get();
+        let bg = crate::utils::parse_color(&config.ui.bg_color);
+
+        // Fill manually with RGB + Alpha=255
+        for chunk in frame.chunks_exact_mut(4) {
+            chunk[0] = bg.0;
+            chunk[1] = bg.1;
+            chunk[2] = bg.2;
+            chunk[3] = 255;
+        }
 
         let (buf_w, buf_h) = if let Some(w) = &self.window {
             let s = w.inner_size();
@@ -443,10 +452,6 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "b" => {
                                     self.show_status_bar = !self.show_status_bar;
-                                    // If we are in a fit mode that depends on height, re-centering or re-scaling might happen
-                                    // implicitly by get_current_scale being called in render.
-                                    // If we are in a mode where offset matters, we might want to adjust offset?
-                                    // For now, simply redrawing handles scale update.
                                     needs_redraw = true;
                                 }
                                 "=" => {
@@ -489,6 +494,12 @@ impl ApplicationHandler<AppEvent> for App {
                                     if !self.images.is_empty() {
                                         self.images[self.current_index].rotate(false);
                                         self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
+                                "_" => {
+                                    if !self.images.is_empty() {
+                                        self.images[self.current_index].flip_horizontal();
                                         needs_redraw = true;
                                     }
                                 }
@@ -558,4 +569,3 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 }
-

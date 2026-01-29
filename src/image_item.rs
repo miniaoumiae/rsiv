@@ -54,6 +54,18 @@ impl ImageItem {
         }
     }
 
+    pub fn flip_horizontal(&mut self) {
+        for frame in &mut self.frames {
+            let pixels = std::mem::take(&mut frame.pixels);
+            if let Some(img_buf) =
+                ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(self.width, self.height, pixels)
+            {
+                let flipped = image::imageops::flip_horizontal(&img_buf);
+                frame.pixels = flipped.into_raw();
+            }
+        }
+    }
+
     pub fn from_path(path: &str) -> Result<Self, String> {
         let path_obj = Path::new(path);
 

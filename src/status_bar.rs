@@ -1,4 +1,6 @@
+use crate::config::AppConfig;
 use crate::frame_buffer::FrameBuffer;
+use crate::utils;
 use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
 
 pub struct StatusBar {
@@ -14,11 +16,12 @@ pub struct StatusBar {
 
 impl StatusBar {
     pub fn new() -> Self {
+        let config = AppConfig::get();
         let mut font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
 
         // Base sizes in "points" (approximate)
-        let base_font_size = 13.0;
+        let base_font_size = config.ui.font_size as f32;
         let base_line_height = base_font_size * 1.2;
         let scale_factor = 1.0;
 
@@ -38,7 +41,7 @@ impl StatusBar {
             height,
             base_font_size,
             scale_factor,
-            background_color: (40, 40, 40),
+            background_color: utils::parse_color(&config.ui.status_bar_bg),
             font_system,
             swash_cache,
             left_buffer,
@@ -85,7 +88,10 @@ impl StatusBar {
         let left_buffer = &mut self.left_buffer;
         let right_buffer = &mut self.right_buffer;
 
-        let attrs = Attrs::new().family(Family::Monospace);
+        let config = AppConfig::get();
+        let text_color_rgb = utils::parse_color(&config.ui.status_bar_fg);
+        let family_name = Family::Name(&config.ui.font_family);
+        let attrs = Attrs::new().family(family_name);
 
         // Update Left Text (Path)
         left_buffer.set_text(font_system, path, &attrs, Shaping::Advanced, None);
@@ -116,6 +122,7 @@ impl StatusBar {
             left_buffer,
             left_x,
             text_y,
+            text_color_rgb,
         );
         Self::draw_buffer(
             font_system,
@@ -124,6 +131,7 @@ impl StatusBar {
             right_buffer,
             right_x,
             text_y,
+            text_color_rgb,
         );
     }
 
@@ -142,8 +150,10 @@ impl StatusBar {
         buffer: &Buffer,
         start_x: i32,
         start_y: i32,
+        text_color_rgb: (u8, u8, u8),
     ) {
-        let text_color = Color::rgb(255, 255, 255);
+        let (r, g, b) = text_color_rgb;
+        let text_color = Color::rgb(r, g, b);
 
         buffer.draw(
             font_system,
