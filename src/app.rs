@@ -274,8 +274,26 @@ impl App {
                         if src_x >= 0 && src_x < src_width {
                             let src_idx = src_row_start + (src_x as usize * 4);
                             if src_idx + 4 <= current_pixels.len() && dest_idx + 4 <= frame.len() {
-                                frame[dest_idx..dest_idx + 4]
-                                    .copy_from_slice(&current_pixels[src_idx..src_idx + 4]);
+                                let src_pixel = &current_pixels[src_idx..src_idx + 4];
+                                let src_a = src_pixel[3] as u32;
+
+                                if src_a == 255 {
+                                    frame[dest_idx..dest_idx + 4].copy_from_slice(src_pixel);
+                                } else if src_a > 0 {
+                                    let dst_pixel = &mut frame[dest_idx..dest_idx + 4];
+                                    let inv_a = 255 - src_a;
+
+                                    dst_pixel[0] = ((src_pixel[0] as u32 * src_a
+                                        + dst_pixel[0] as u32 * inv_a)
+                                        / 255) as u8;
+                                    dst_pixel[1] = ((src_pixel[1] as u32 * src_a
+                                        + dst_pixel[1] as u32 * inv_a)
+                                        / 255) as u8;
+                                    dst_pixel[2] = ((src_pixel[2] as u32 * src_a
+                                        + dst_pixel[2] as u32 * inv_a)
+                                        / 255) as u8;
+                                    dst_pixel[3] = 255;
+                                }
                             }
                         }
 
