@@ -127,24 +127,12 @@ impl App {
         }
     }
 
-    fn update_title(&self) {
-        if let Some(w) = &self.window {
-            if let Some(_item) = self.images.get(self.current_index) {
-                // Simplified title since we have status bar
-                w.set_title("rsiv");
-            } else {
-                w.set_title("rsiv - No images");
-            }
-        }
-    }
-
     fn reset_view_for_new_image(&mut self) {
         self.off_x = 0;
         self.off_y = 0;
         self.current_frame_index = 0;
         self.frame_timer = Duration::ZERO;
         self.is_playing = true;
-        self.update_title();
     }
 
     fn render(&mut self) {
@@ -285,13 +273,16 @@ impl App {
 
                                     dst_pixel[0] = ((src_pixel[0] as u32 * src_a
                                         + dst_pixel[0] as u32 * inv_a)
-                                        / 255) as u8;
+                                        / 255)
+                                        as u8;
                                     dst_pixel[1] = ((src_pixel[1] as u32 * src_a
                                         + dst_pixel[1] as u32 * inv_a)
-                                        / 255) as u8;
+                                        / 255)
+                                        as u8;
                                     dst_pixel[2] = ((src_pixel[2] as u32 * src_a
                                         + dst_pixel[2] as u32 * inv_a)
-                                        / 255) as u8;
+                                        / 255)
+                                        as u8;
                                     dst_pixel[3] = 255;
                                 }
                             }
@@ -344,19 +335,11 @@ impl ApplicationHandler<AppEvent> for App {
         let surface_texture = SurfaceTexture::new(size.width, size.height, window.clone());
         let pixels = Pixels::new(size.width, size.height, surface_texture).unwrap();
 
-        // Title update will happen when images load or here if already loaded
-        window.set_title("rsiv - Loading...");
-
         self.window = Some(window.clone());
         self.pixels = Some(pixels);
 
         let scale_factor = window.scale_factor();
         self.status_bar.set_scale(scale_factor as f32);
-
-        // If we already have images (from constructor, though now we plan to start empty), update
-        if !self.images.is_empty() {
-            self.update_title();
-        }
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
@@ -371,9 +354,6 @@ impl ApplicationHandler<AppEvent> for App {
                     if let Some(w) = &self.window {
                         w.request_redraw();
                     }
-                } else {
-                    // Update title to show count if window exists
-                    self.update_title();
                 }
             }
             AppEvent::LoadComplete => {
@@ -518,6 +498,12 @@ impl ApplicationHandler<AppEvent> for App {
                                 "_" => {
                                     if !self.images.is_empty() {
                                         self.images[self.current_index].flip_horizontal();
+                                        needs_redraw = true;
+                                    }
+                                }
+                                "?" => {
+                                    if !self.images.is_empty() {
+                                        self.images[self.current_index].flip_vertical();
                                         needs_redraw = true;
                                     }
                                 }

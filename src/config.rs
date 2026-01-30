@@ -68,7 +68,8 @@ impl Default for AppConfig {
 #[serde(default)]
 pub struct Keybindings {
     pub quit: Vec<String>,
-    pub image_flip: Vec<String>,
+    pub image_flip_horizontal: Vec<String>,
+    pub image_flip_vertical: Vec<String>,
     pub image_next: Vec<String>,
     pub image_previous: Vec<String>,
     pub rotate_cw: Vec<String>,
@@ -93,7 +94,8 @@ impl Default for Keybindings {
     fn default() -> Self {
         Self {
             quit: vec!["q".into()],
-            image_flip: vec!["_".into()],
+            image_flip_horizontal: vec!["_".into()],
+            image_flip_vertical: vec!["?".into()],
             image_next: vec!["n".into()],
             image_previous: vec!["p".into()],
             rotate_cw: vec![">".into()],
