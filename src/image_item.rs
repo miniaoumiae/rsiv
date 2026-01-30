@@ -2,6 +2,7 @@ use image::{AnimationDecoder, ImageBuffer, ImageReader, Rgba};
 use resvg::usvg::{self, Options, Tree};
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tiny_skia::Pixmap;
 
@@ -73,10 +74,10 @@ impl ImageItem {
         let mut opt = Options::default();
         opt.resources_dir = path_obj.parent().map(|p| p.to_path_buf());
 
-        let fontdb = crate::utils::get_svg_font_db();
+        opt.fontdb = Arc::new(crate::utils::get_svg_font_db().clone());
 
-        let tree = Tree::from_data(file_data, &opt, fontdb)
-            .map_err(|e| format!("SVG Parse Error: {}", e))?;
+        let tree =
+            Tree::from_data(file_data, &opt).map_err(|e| format!("SVG Parse Error: {}", e))?;
 
         let size = tree.size().to_int_size();
         let (width, height) = (size.width(), size.height());
@@ -90,7 +91,7 @@ impl ImageItem {
             height,
             frames: vec![FrameData {
                 pixels: pixmap.take(),
-                delay: Duration::MAX,
+                delay: std::time::Duration::MAX,
             }],
             thumb: None,
         })

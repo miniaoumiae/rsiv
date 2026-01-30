@@ -38,30 +38,6 @@ cargo run --release -- image.png
 cargo run --release -- ~/Pictures/Wa
 ```
 
-## Controls
-
-| Key           | Action                           |
-| ------------- | -------------------------------- |
-| `q`           | Quit application                 |
-| `n`           | Next image                       |
-| `p`           | Previous image                   |
-| `h` / `Left`  | Shift image Left                 |
-| `l` / `Right` | Shift image Right                |
-| `j` / `Down`  | Shift image Down                 |
-| `k` / `Up`    | Shift image Up                   |
-| `+`           | Zoom In                          |
-| `-`           | Zoom Out                         |
-| `=`           | Reset Zoom (100%)                |
-| `f`           | Fit to Window                    |
-| `F`           | Best Fit (Fit but don't upscale) |
-| `W`           | Fit Width                        |
-| `H`           | Fit Height                       |
-| `z`           | Reset Image Position (Center)    |
-| `>`           | Rotate Clockwise                 |
-| `<`           | Rotate Counter-Clockwise         |
-| `b`           | Toggle Status Bar                |
-| `Ctrl + a`    | Toggle Animation Playback        |
-
 ## Features Roadmap
 
 - [x] Image rendering
@@ -72,7 +48,7 @@ cargo run --release -- ~/Pictures/Wa
 - [ ] command line arguments
 - [ ] Other view modes
 - [x] UI personalisation
-- [ ] Thumbnail mode
+- [x] Thumbnail mode
 - [ ] Script handler support (C-x)
 - [ ] Mouse support
 - [ ] Option handling in config
@@ -80,3 +56,4 @@ cargo run --release -- ~/Pictures/Wa
 - [ ] Config hot reload
 - [ ] Images reload on change
 - [ ] Memory usage optimization
+- [ ] Add search mode with n/N (n already is mapped tho ?)

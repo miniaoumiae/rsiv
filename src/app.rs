@@ -475,6 +475,20 @@ impl ApplicationHandler<AppEvent> for App {
                                         needs_redraw = true;
                                     }
                                 }
+                                "g" => {
+                                    if !self.images.is_empty() {
+                                        self.current_index = 0;
+                                        self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
+                                "G" => {
+                                    if !self.images.is_empty() {
+                                        self.current_index = self.images.len() - 1;
+                                        self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
                                 ">" => {
                                     if !self.images.is_empty() {
                                         self.images[self.current_index].rotate(true);
