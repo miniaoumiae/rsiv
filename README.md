@@ -67,14 +67,16 @@ cargo run --release -- ~/Pictures/Wa
 - [x] Image rendering
 - [x] Basic image view modes (zoom, adjust width, adjust height, fit best)
 - [x] Basic status bar
-- [ ] svg support
+- [x] svg support
 - [ ] Keybinds personalisation
 - [ ] command line arguments
 - [ ] Other view modes
-- [ ] UI personalisation
+- [x] UI personalisation
 - [ ] Thumbnail mode
 - [ ] Script handler support (C-x)
 - [ ] Mouse support
+- [ ] Option handling in config
 - [ ] Adding color filter (Gamma and Brightness, ...)
 - [ ] Config hot reload
 - [ ] Images reload on change
+- [ ] Memory usage optimization

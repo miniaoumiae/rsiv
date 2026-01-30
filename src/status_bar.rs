@@ -2,14 +2,16 @@ use crate::config::AppConfig;
 use crate::frame_buffer::FrameBuffer;
 use crate::utils;
 use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
+use std::sync::{Mutex, OnceLock};
+
+static UI_FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
+static UI_SWASH_CACHE: OnceLock<Mutex<SwashCache>> = OnceLock::new();
 
 pub struct StatusBar {
     pub height: u32,
     base_font_size: f32,
     scale_factor: f32,
     background_color: (u8, u8, u8),
-    font_system: FontSystem,
-    swash_cache: SwashCache,
     left_buffer: Buffer,
     right_buffer: Buffer,
 }
@@ -17,10 +19,12 @@ pub struct StatusBar {
 impl StatusBar {
     pub fn new() -> Self {
         let config = AppConfig::get();
-        let mut font_system = FontSystem::new();
-        let swash_cache = SwashCache::new();
 
-        // Base sizes in "points" (approximate)
+        let mut font_system = UI_FONT_SYSTEM
+            .get_or_init(|| Mutex::new(FontSystem::new()))
+            .lock()
+            .unwrap();
+
         let base_font_size = config.ui.font_size as f32;
         let base_line_height = base_font_size * 1.2;
         let scale_factor = 1.0;
@@ -42,8 +46,6 @@ impl StatusBar {
             base_font_size,
             scale_factor,
             background_color: utils::parse_color(&config.ui.status_bar_bg),
-            font_system,
-            swash_cache,
             left_buffer,
             right_buffer,
         }
@@ -54,20 +56,21 @@ impl StatusBar {
             return;
         }
 
+        let mut font_system = UI_FONT_SYSTEM.get().unwrap().lock().unwrap();
+
         self.scale_factor = scale;
         let base_line_height = self.base_font_size * 1.2;
 
         let metrics = Metrics::new(self.base_font_size * scale, base_line_height * scale);
         self.height = (base_line_height * scale) as u32;
 
-        self.left_buffer.set_metrics(&mut self.font_system, metrics);
-        self.right_buffer
-            .set_metrics(&mut self.font_system, metrics);
+        self.left_buffer.set_metrics(&mut font_system, metrics);
+        self.right_buffer.set_metrics(&mut font_system, metrics);
 
         self.left_buffer
-            .set_size(&mut self.font_system, None, Some(self.height as f32));
+            .set_size(&mut font_system, None, Some(self.height as f32));
         self.right_buffer
-            .set_size(&mut self.font_system, None, Some(self.height as f32));
+            .set_size(&mut font_system, None, Some(self.height as f32));
     }
 
     pub fn draw(
@@ -78,59 +81,63 @@ impl StatusBar {
         total: usize,
         path: &str,
     ) {
+        // Lock both globals for the duration of the draw
+        let mut font_system = UI_FONT_SYSTEM.get().unwrap().lock().unwrap();
+        let mut swash_cache = UI_SWASH_CACHE
+            .get_or_init(|| Mutex::new(SwashCache::new()))
+            .lock()
+            .unwrap();
+
         let width = target.width;
         let target_height = target.height;
         let bar_top = (target_height - self.height) as i32;
-
-        // Borrow fields individually
-        let font_system = &mut self.font_system;
-        let swash_cache = &mut self.swash_cache;
-        let left_buffer = &mut self.left_buffer;
-        let right_buffer = &mut self.right_buffer;
 
         let config = AppConfig::get();
         let text_color_rgb = utils::parse_color(&config.ui.status_bar_fg);
         let family_name = Family::Name(&config.ui.font_family);
         let attrs = Attrs::new().family(family_name);
 
-        // Update Left Text (Path)
-        left_buffer.set_text(font_system, path, &attrs, Shaping::Advanced, None);
-
-        // Update Right Text (Status)
+        // Update Text
+        self.left_buffer
+            .set_text(&mut font_system, path, &attrs, Shaping::Advanced, None);
         let right_text = format!("{}% {}/{}", scale_percent, index, total);
-        right_buffer.set_text(font_system, &right_text, &attrs, Shaping::Advanced, None);
+        self.right_buffer.set_text(
+            &mut font_system,
+            &right_text,
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
 
         // Shape buffers
-        left_buffer.shape_until_scroll(font_system, false);
-        right_buffer.shape_until_scroll(font_system, false);
-
-        // Calculate positions
-        let text_y = bar_top;
-        let left_x = 5;
-
-        let right_w = Self::measure_width(right_buffer) as u32;
-        let right_x = (width as i32) - (right_w as i32) - 5;
+        self.left_buffer.shape_until_scroll(&mut font_system, false);
+        self.right_buffer
+            .shape_until_scroll(&mut font_system, false);
 
         // Draw Full-width Background Bar
         target.draw_rect(0, bar_top, width, self.height, self.background_color);
 
-        // Draw Text
+        // Calculate right text position
+        let right_w = Self::measure_width(&self.right_buffer) as u32;
+        let right_x = (width as i32) - (right_w as i32) - 5;
+
+        // Draw Buffers using global engines
         Self::draw_buffer(
-            font_system,
-            swash_cache,
+            &mut font_system,
+            &mut swash_cache,
             target,
-            left_buffer,
-            left_x,
-            text_y,
+            &self.left_buffer,
+            5,
+            bar_top,
             text_color_rgb,
         );
         Self::draw_buffer(
-            font_system,
-            swash_cache,
+            &mut font_system,
+            &mut swash_cache,
             target,
-            right_buffer,
+            &self.right_buffer,
             right_x,
-            text_y,
+            bar_top,
             text_color_rgb,
         );
     }
@@ -195,7 +202,6 @@ impl StatusBar {
                     target.frame[idx] = r as u8;
                     target.frame[idx + 1] = g as u8;
                     target.frame[idx + 2] = b as u8;
-                    target.frame[idx + 3] = 255;
                 }
             },
         );

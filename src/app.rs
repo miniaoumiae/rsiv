@@ -1,4 +1,3 @@
-use crate::frame_buffer::FrameBuffer;
 use crate::image_item::ImageItem;
 use crate::status_bar::StatusBar;
 use crate::view_mode::ViewMode;
@@ -28,7 +27,6 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 ))]
 use winit::platform::x11::WindowAttributesExtX11;
 
-// Define the custom event
 #[derive(Debug)]
 pub enum AppEvent {
     ImageLoaded(ImageItem),
@@ -140,7 +138,7 @@ impl App {
             return;
         }
 
-        // Animation Logic
+        // Animation
         let now = Instant::now();
         let dt = now.duration_since(self.last_update);
         self.last_update = now;
@@ -151,7 +149,6 @@ impl App {
         if self.is_playing && frame_count > 1 {
             self.frame_timer += dt;
             let current_delay = item.frames[self.current_frame_index].delay;
-
             let effective_delay = if current_delay.is_zero() {
                 Duration::from_millis(100)
             } else {
@@ -165,27 +162,20 @@ impl App {
             if let Some(w) = &self.window {
                 w.request_redraw();
             }
-        } else {
-            self.frame_timer = Duration::ZERO;
         }
 
+        // Prepare Drawing Surface
         let scale = self.get_current_scale();
-
         let Some(pixels) = &mut self.pixels else {
             return;
         };
 
-        let frame = pixels.frame_mut();
+        let frame_slice = pixels.frame_mut();
         let config = crate::config::AppConfig::get();
-        let bg = crate::utils::parse_color(&config.ui.bg_color);
+        let bg_color = crate::utils::parse_color(&config.ui.bg_color);
 
-        // Fill manually with RGB + Alpha=255
-        for chunk in frame.chunks_exact_mut(4) {
-            chunk[0] = bg.0;
-            chunk[1] = bg.1;
-            chunk[2] = bg.2;
-            chunk[3] = 255;
-        }
+        // Clear Background
+        crate::renderer::Renderer::clear(frame_slice, bg_color);
 
         let (buf_w, buf_h) = if let Some(w) = &self.window {
             let s = w.inner_size();
@@ -194,110 +184,28 @@ impl App {
             return;
         };
 
-        if buf_w <= 0 || buf_h <= 0 {
-            return;
-        }
-
-        // Available area calculation
         let available_h = if self.show_status_bar {
             buf_h - self.status_bar.height as i32
         } else {
             buf_h
         };
 
-        if available_h <= 0 {
-            // Draw status bar only if possible
-            if self.show_status_bar && buf_h > 0 {
-                let mut fb = FrameBuffer::new(frame, buf_w as u32, buf_h as u32);
-                self.status_bar.draw(
-                    &mut fb,
-                    (scale * 100.0) as u32,
-                    self.current_index + 1,
-                    self.images.len(),
-                    &item.path,
-                );
-            }
-            if let Err(err) = pixels.render() {
-                eprintln!("Pixels render error: {}", err);
-            }
-            return;
-        }
+        // Render the Image
+        crate::renderer::Renderer::draw_image(
+            frame_slice,
+            buf_w,
+            available_h,
+            item,
+            self.current_frame_index,
+            scale,
+            self.off_x,
+            self.off_y,
+        );
 
-        let img_w = item.width as f64;
-        let img_h = item.height as f64;
-
-        let scaled_w = img_w * scale;
-        let scaled_h = img_h * scale;
-
-        // Center within available height
-        let tl_x = (buf_w as f64 / 2.0) - (scaled_w / 2.0) + self.off_x as f64;
-        let tl_y = (available_h as f64 / 2.0) - (scaled_h / 2.0) + self.off_y as f64;
-
-        let start_x = tl_x.max(0.0) as i32;
-        let start_y = tl_y.max(0.0) as i32;
-        let end_x = (tl_x + scaled_w).min(buf_w as f64) as i32;
-        let end_y = (tl_y + scaled_h).min(available_h as f64) as i32; // Limit to available height
-
-        if end_x > start_x && end_y > start_y {
-            let inv_scale = 1.0 / scale;
-            let src_width = item.width as i32;
-            let src_height = item.height as i32;
-
-            let current_pixels = &item.frames[self.current_frame_index].pixels;
-            let src_x_start_f = (start_x as f64 - tl_x) * inv_scale;
-
-            for y in start_y..end_y {
-                let src_y = ((y as f64 - tl_y) * inv_scale) as i32;
-
-                if src_y >= 0 && src_y < src_height {
-                    let dest_row_start = (y * buf_w + start_x) as usize * 4;
-                    let src_row_start = (src_y * src_width) as usize * 4;
-
-                    let mut src_x_f = src_x_start_f;
-                    let mut dest_idx = dest_row_start;
-
-                    for _x in start_x..end_x {
-                        let src_x = src_x_f as i32;
-
-                        if src_x >= 0 && src_x < src_width {
-                            let src_idx = src_row_start + (src_x as usize * 4);
-                            if src_idx + 4 <= current_pixels.len() && dest_idx + 4 <= frame.len() {
-                                let src_pixel = &current_pixels[src_idx..src_idx + 4];
-                                let src_a = src_pixel[3] as u32;
-
-                                if src_a == 255 {
-                                    frame[dest_idx..dest_idx + 4].copy_from_slice(src_pixel);
-                                } else if src_a > 0 {
-                                    let dst_pixel = &mut frame[dest_idx..dest_idx + 4];
-                                    let inv_a = 255 - src_a;
-
-                                    dst_pixel[0] = ((src_pixel[0] as u32 * src_a
-                                        + dst_pixel[0] as u32 * inv_a)
-                                        / 255)
-                                        as u8;
-                                    dst_pixel[1] = ((src_pixel[1] as u32 * src_a
-                                        + dst_pixel[1] as u32 * inv_a)
-                                        / 255)
-                                        as u8;
-                                    dst_pixel[2] = ((src_pixel[2] as u32 * src_a
-                                        + dst_pixel[2] as u32 * inv_a)
-                                        / 255)
-                                        as u8;
-                                    dst_pixel[3] = 255;
-                                }
-                            }
-                        }
-
-                        src_x_f += inv_scale;
-                        dest_idx += 4;
-                    }
-                }
-            }
-        }
-
-        // Draw Status Bar if enabled
-        if self.show_status_bar {
-            let mut fb = FrameBuffer::new(frame, buf_w as u32, buf_h as u32);
+        // Draw Status Bar
+        if self.show_status_bar && buf_h > 0 {
+            let mut fb =
+                crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
             self.status_bar.draw(
                 &mut fb,
                 (scale * 100.0) as u32,

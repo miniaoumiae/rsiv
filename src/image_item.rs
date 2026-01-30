@@ -1,8 +1,9 @@
 use image::{AnimationDecoder, ImageBuffer, ImageReader, Rgba};
-use std::fs::File;
-use std::io::BufReader;
+use resvg::usvg::{self, Options, Tree};
+use std::io::Cursor;
 use std::path::Path;
 use std::time::Duration;
+use tiny_skia::Pixmap;
 
 pub struct FrameData {
     pub pixels: Vec<u8>,
@@ -27,134 +28,176 @@ pub struct ImageItem {
 }
 
 impl ImageItem {
-    pub fn rotate(&mut self, clockwise: bool) {
-        let mut new_width = 0;
-        let mut new_height = 0;
+    pub fn from_path(path: &str) -> Result<Self, String> {
+        let path_obj = Path::new(path);
+        let file_data = std::fs::read(path_obj).map_err(|e| format!("Read error: {}", e))?;
 
+        let kind = infer::get(&file_data);
+        let mime = kind
+            .map(|k| k.mime_type())
+            .unwrap_or("application/octet-stream");
+
+        let is_svg_content = || {
+            let header = &file_data[..file_data.len().min(1024)];
+            let content = String::from_utf8_lossy(header);
+            content.to_lowercase().contains("<svg")
+        };
+
+        match mime {
+            "image/svg+xml" => Self::decode_svg(&file_data, path_obj),
+
+            "text/xml" | "application/xml" | "text/plain" | "application/octet-stream" => {
+                if is_svg_content() {
+                    Self::decode_svg(&file_data, path_obj)
+                } else {
+                    Err(format!(
+                        "File is {}, but no SVG data found (File: {})",
+                        mime, path
+                    ))
+                }
+            }
+
+            "image/gif" => Self::decode_gif(&file_data, path),
+
+            m if m.starts_with("image/") => Self::decode_static(&file_data, path),
+
+            _ => Err(format!(
+                "Unsupported or mismatched format: {} (File: {})",
+                mime, path
+            )),
+        }
+    }
+
+    fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<Self, String> {
+        let mut opt = Options::default();
+        opt.resources_dir = path_obj.parent().map(|p| p.to_path_buf());
+
+        let fontdb = crate::utils::get_svg_font_db();
+
+        let tree = Tree::from_data(file_data, &opt, fontdb)
+            .map_err(|e| format!("SVG Parse Error: {}", e))?;
+
+        let size = tree.size().to_int_size();
+        let (width, height) = (size.width(), size.height());
+
+        let mut pixmap = Pixmap::new(width, height).ok_or("Failed to create pixmap")?;
+        resvg::render(&tree, usvg::Transform::default(), &mut pixmap.as_mut());
+
+        Ok(Self {
+            path: path_obj.to_string_lossy().into(),
+            width,
+            height,
+            frames: vec![FrameData {
+                pixels: pixmap.take(),
+                delay: Duration::MAX,
+            }],
+        })
+    }
+
+    fn decode_gif(file_data: &[u8], path: &str) -> Result<Self, String> {
+        let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(file_data))
+            .map_err(|e| format!("GIF Decoder error: {}", e))?;
+
+        let gif_frames = decoder
+            .into_frames()
+            .collect_frames()
+            .map_err(|e| format!("GIF Frame error: {}", e))?;
+
+        if gif_frames.is_empty() {
+            return Self::decode_static(file_data, path);
+        }
+
+        let first = gif_frames[0].buffer();
+        let (width, height) = (first.width(), first.height());
+
+        let frames = gif_frames
+            .into_iter()
+            .map(|f| {
+                let (n, d) = f.delay().numer_denom_ms();
+                let delay = if d == 0 {
+                    Duration::from_millis(100)
+                } else {
+                    Duration::from_millis(n as u64 / d as u64)
+                };
+                FrameData {
+                    pixels: f.into_buffer().into_raw(),
+                    delay,
+                }
+            })
+            .collect();
+
+        Ok(Self {
+            path: path.into(),
+            width,
+            height,
+            frames,
+        })
+    }
+
+    fn decode_static(file_data: &[u8], path: &str) -> Result<Self, String> {
+        let img = ImageReader::new(Cursor::new(file_data))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?
+            .decode()
+            .map_err(|e| e.to_string())?;
+
+        let (width, height) = (img.width(), img.height());
+
+        Ok(Self {
+            path: path.into(),
+            width,
+            height,
+            frames: vec![FrameData {
+                pixels: img.to_rgba8().into_raw(),
+                delay: Duration::MAX,
+            }],
+        })
+    }
+
+    pub fn rotate(&mut self, clockwise: bool) {
+        let mut new_size = None;
         for frame in &mut self.frames {
-            let pixels = std::mem::take(&mut frame.pixels);
-            if let Some(img_buf) =
-                ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(self.width, self.height, pixels)
-            {
+            if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
+                self.width,
+                self.height,
+                std::mem::take(&mut frame.pixels),
+            ) {
                 let rotated = if clockwise {
                     image::imageops::rotate90(&img_buf)
                 } else {
                     image::imageops::rotate270(&img_buf)
                 };
-
-                new_width = rotated.width();
-                new_height = rotated.height();
+                new_size = Some((rotated.width(), rotated.height()));
                 frame.pixels = rotated.into_raw();
             }
         }
-
-        if new_width != 0 && new_height != 0 {
-            self.width = new_width;
-            self.height = new_height;
+        if let Some((w, h)) = new_size {
+            self.width = w;
+            self.height = h;
         }
     }
 
     pub fn flip_horizontal(&mut self) {
         for frame in &mut self.frames {
-            let pixels = std::mem::take(&mut frame.pixels);
-            if let Some(img_buf) =
-                ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(self.width, self.height, pixels)
-            {
-                let flipped = image::imageops::flip_horizontal(&img_buf);
-                frame.pixels = flipped.into_raw();
+            if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
+                self.width,
+                self.height,
+                std::mem::take(&mut frame.pixels),
+            ) {
+                frame.pixels = image::imageops::flip_horizontal(&img_buf).into_raw();
             }
         }
     }
 
     pub fn flip_vertical(&mut self) {
         for frame in &mut self.frames {
-            let pixels = std::mem::take(&mut frame.pixels);
-            if let Some(img_buf) =
-                ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(self.width, self.height, pixels)
-            {
-                let flipped = image::imageops::flip_vertical(&img_buf);
-                frame.pixels = flipped.into_raw();
+            if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
+                self.width,
+                self.height,
+                std::mem::take(&mut frame.pixels),
+            ) {
+                frame.pixels = image::imageops::flip_vertical(&img_buf).into_raw();
             }
         }
-    }
-
-    pub fn from_path(path: &str) -> Result<Self, String> {
-        let path_obj = Path::new(path);
-
-        // Use with_guessed_format to support files without extensions or wrong extensions
-        let reader = ImageReader::open(path_obj)
-            .map_err(|e| format!("Failed to open file: {}", e))?
-            .with_guessed_format()
-            .map_err(|e| format!("Failed to guess format: {}", e))?;
-
-        let format = reader.format();
-        let mut frames = Vec::new();
-        let width;
-        let height;
-
-        // NOTE: We prioritize GIF animation. Other formats could be added here.
-        if Some(image::ImageFormat::Gif) == format {
-            // Re-open for the decoder because ImageReader consumes ownership or we want a buffered reader specifically for GifDecoder
-            // Actually, we can try to use the reader if possible, but GifDecoder takes a Read.
-            // Let's just open again safely.
-            let file = File::open(path_obj).map_err(|e| e.to_string())?;
-            let decoder = image::codecs::gif::GifDecoder::new(BufReader::new(file))
-                .map_err(|e| format!("Failed to create GIF decoder: {}", e))?;
-
-            // collect_frames can fail
-            let gif_frames = decoder
-                .into_frames()
-                .collect_frames()
-                .map_err(|e| format!("Failed to collect GIF frames: {}", e))?;
-
-            if !gif_frames.is_empty() {
-                let first = gif_frames[0].buffer();
-                width = first.width();
-                height = first.height();
-
-                for frame in gif_frames {
-                    let (numer, denom) = frame.delay().numer_denom_ms();
-                    let d = if denom == 0 {
-                        Duration::from_millis(100)
-                    } else {
-                        Duration::from_millis((numer as u64) / (denom as u64))
-                    };
-
-                    frames.push(FrameData {
-                        pixels: frame.into_buffer().into_raw(),
-                        delay: d,
-                    });
-                }
-            } else {
-                // Empty GIF? Fallback to static decode
-                let img = reader
-                    .decode()
-                    .map_err(|e| format!("Failed to decode image: {}", e))?;
-                width = img.width();
-                height = img.height();
-                frames.push(FrameData {
-                    pixels: img.to_rgba8().into_raw(),
-                    delay: Duration::MAX,
-                });
-            }
-        } else {
-            // Static image
-            let img = reader
-                .decode()
-                .map_err(|e| format!("Failed to decode image: {}", e))?;
-            width = img.width();
-            height = img.height();
-            frames.push(FrameData {
-                pixels: img.to_rgba8().into_raw(),
-                delay: Duration::MAX,
-            });
-        }
-
-        Ok(Self {
-            path: path.to_string(),
-            width,
-            height,
-            frames,
-        })
     }
 }

@@ -10,3 +10,21 @@ pixels = "0.15.0"
 cosmic-text = "0.16.0"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "0.8"
+resvg = "0.40"
+tiny-skia = "0.11"
+infer = "0.16"
+rayon = "1.11.0"
+
+# [profile.release]
+# opt-level = 'z'
+# lto = true
+# codegen-units = 1
+# panic = 'abort'
+# strip = true
+#
+# [profile.release]
+# opt-level = 3
+# lto = "fat"
+# codegen-units = 1
+# panic = 'abort'
+# strip = "symbols"
