@@ -25,6 +25,7 @@ pub struct ImageItem {
     pub width: u32,
     pub height: u32,
     pub frames: Vec<FrameData>,
+    pub thumb: Option<(u32, u32, Vec<u8>)>,
 }
 
 impl ImageItem {
@@ -91,6 +92,7 @@ impl ImageItem {
                 pixels: pixmap.take(),
                 delay: Duration::MAX,
             }],
+            thumb: None,
         })
     }
 
@@ -131,6 +133,7 @@ impl ImageItem {
             width,
             height,
             frames,
+            thumb: None,
         })
     }
 
@@ -151,7 +154,42 @@ impl ImageItem {
                 pixels: img.to_rgba8().into_raw(),
                 delay: Duration::MAX,
             }],
+            thumb: None,
         })
+    }
+
+    pub fn get_thumbnail(&mut self, size: u32) -> Option<(u32, u32, &[u8])> {
+        if self.thumb.is_none() {
+            if let Some(first_frame) = self.frames.first() {
+                if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
+                    self.width,
+                    self.height,
+                    first_frame.pixels.clone(),
+                ) {
+                    // We avoid using `image::imageops::thumbnail` because it distort the image
+                    let aspect = self.width as f64 / self.height as f64;
+                    let (nwidth, nheight) = if aspect >= 1.0 {
+                        (size, (size as f64 / aspect) as u32)
+                    } else {
+                        ((size as f64 * aspect) as u32, size)
+                    };
+
+                    let nwidth = nwidth.max(1);
+                    let nheight = nheight.max(1);
+
+                    let thumb = image::imageops::resize(
+                        &img_buf,
+                        nwidth,
+                        nheight,
+                        image::imageops::FilterType::Triangle,
+                    );
+                    self.thumb = Some((thumb.width(), thumb.height(), thumb.into_raw()));
+                }
+            }
+        }
+        self.thumb
+            .as_ref()
+            .map(|(w, h, data)| (*w, *h, data.as_slice()))
     }
 
     pub fn rotate(&mut self, clockwise: bool) {

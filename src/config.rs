@@ -126,6 +126,8 @@ pub struct Ui {
     pub status_bar_fg: String,
     pub font_family: String,
     pub font_size: u8,
+    pub thumbnail_border_color: String,
+    pub mark_color: String,
 }
 
 impl Default for Ui {
@@ -136,6 +138,8 @@ impl Default for Ui {
             status_bar_fg: "#FFFFFF".into(),
             font_family: "monospace".into(),
             font_size: 13,
+            thumbnail_border_color: "#FFFFFF".into(),
+            mark_color: "#FF0000".into(),
         }
     }
 }

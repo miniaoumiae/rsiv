@@ -92,4 +92,180 @@ impl Renderer {
             }
         }
     }
+
+    pub fn draw_grid(
+        frame: &mut [u8],
+        buf_w: i32,
+        buf_h: i32,
+        images: &mut [ImageItem],
+        selected_idx: usize,
+        bg_color: (u8, u8, u8),
+        accent_color: (u8, u8, u8),
+        mark_color: (u8, u8, u8),
+        marked_paths: &std::collections::HashSet<String>,
+    ) {
+        let thumb_size = 160;
+        let padding = 30;
+        let cell_size = thumb_size + padding;
+
+        let cols = (buf_w as u32 / cell_size).max(1);
+
+        // Calculate margin to center the grid horizontally
+        let grid_width = cols * cell_size;
+        let margin_x = (buf_w as u32 - grid_width) / 2 + padding / 2;
+
+        let current_row = (selected_idx as u32) / cols;
+        // Scroll so selected row is roughly in middle
+        let scroll_y = if current_row * cell_size > buf_h as u32 / 2 {
+            (current_row * cell_size) as i32 - (buf_h / 2) + (cell_size as i32 / 2)
+        } else {
+            0
+        };
+
+        // Clear background
+        Self::clear(frame, bg_color);
+
+        for (i, item) in images.iter_mut().enumerate() {
+            let col = (i as u32) % cols;
+            let row = (i as u32) / cols;
+
+            let x_cell = (margin_x + col * cell_size) as i32;
+            let y_cell = (row * cell_size + padding / 2) as i32 - scroll_y;
+
+            // Visibility check
+            if y_cell + (cell_size as i32) < 0 || y_cell > buf_h {
+                continue;
+            }
+
+            if let Some((t_w, t_h, pixels)) = item.get_thumbnail(thumb_size) {
+                // Center the thumbnail in the cell
+                let t_x = x_cell + (thumb_size as i32 - t_w as i32) / 2;
+                let t_y = y_cell + (thumb_size as i32 - t_h as i32) / 2;
+
+                // Draw pixels
+                for row_idx in 0..t_h {
+                    let dest_y = t_y + row_idx as i32;
+                    if dest_y >= 0 && dest_y < buf_h {
+                        let src_row_start = (row_idx * t_w) as usize * 4;
+                        let dest_row_start = (dest_y * buf_w + t_x) as usize * 4;
+
+                        let row_len = (t_w as usize).min((buf_w as i32 - t_x).max(0) as usize) * 4;
+
+                        if src_row_start + row_len <= pixels.len()
+                            && dest_row_start + row_len <= frame.len()
+                            && t_x >= 0
+                        {
+                            let src_slice = &pixels[src_row_start..src_row_start + row_len];
+                            let dest_slice = &mut frame[dest_row_start..dest_row_start + row_len];
+
+                            for (src_chunk, dest_chunk) in src_slice
+                                .chunks_exact(4)
+                                .zip(dest_slice.chunks_exact_mut(4))
+                            {
+                                let src_a = src_chunk[3] as u32;
+                                if src_a == 255 {
+                                    dest_chunk.copy_from_slice(src_chunk);
+                                } else if src_a > 0 {
+                                    let inv_a = 255 - src_a;
+                                    dest_chunk[0] = ((src_chunk[0] as u32 * src_a
+                                        + dest_chunk[0] as u32 * inv_a)
+                                        / 255)
+                                        as u8;
+                                    dest_chunk[1] = ((src_chunk[1] as u32 * src_a
+                                        + dest_chunk[1] as u32 * inv_a)
+                                        / 255)
+                                        as u8;
+                                    dest_chunk[2] = ((src_chunk[2] as u32 * src_a
+                                        + dest_chunk[2] as u32 * inv_a)
+                                        / 255)
+                                        as u8;
+                                    dest_chunk[3] = 255;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Draw border if selected
+                if i == selected_idx {
+                    let border_gap = 1;
+                    let thickness = 4;
+                    let offset = border_gap + thickness;
+                    Self::draw_border(
+                        frame,
+                        buf_w,
+                        buf_h,
+                        t_x - offset,
+                        t_y - offset,
+                        t_w as i32 + offset * 2,
+                        t_h as i32 + offset * 2,
+                        accent_color,
+                    );
+                }
+
+                // Draw mark indicator if marked
+                if marked_paths.contains(&item.path) {
+                    let mark_size = 12;
+                    let border_gap = 1;
+                    let thickness = 4;
+                    // Position at bottom-right corner, centered on the border area
+                    let m_x = t_x + t_w as i32 + border_gap + thickness / 2 - mark_size / 2;
+                    let m_y = t_y + t_h as i32 + border_gap + thickness / 2 - mark_size / 2;
+
+                    // Simple filled rect for mark
+                    for dy in 0..mark_size {
+                        for dx in 0..mark_size {
+                            let px = m_x + dx;
+                            let py = m_y + dy;
+                            if px >= 0 && px < buf_w && py >= 0 && py < buf_h {
+                                let idx = ((py * buf_w + px) * 4) as usize;
+                                if idx + 4 <= frame.len() {
+                                    frame[idx] = mark_color.0;
+                                    frame[idx + 1] = mark_color.1;
+                                    frame[idx + 2] = mark_color.2;
+                                    frame[idx + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_border(
+        frame: &mut [u8],
+        buf_w: i32,
+        buf_h: i32,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        color: (u8, u8, u8),
+    ) {
+        let thickness = 4;
+        let color_alpha = [color.0, color.1, color.2, 255];
+
+        let mut set_pixel = |x: i32, y: i32| {
+            if x >= 0 && x < buf_w && y >= 0 && y < buf_h {
+                let idx = ((y * buf_w + x) * 4) as usize;
+                if idx + 4 <= frame.len() {
+                    frame[idx..idx + 4].copy_from_slice(&color_alpha);
+                }
+            }
+        };
+
+        for i in 0..thickness {
+            // Top & Bottom
+            for bx in x..(x + w) {
+                set_pixel(bx, y + i);
+                set_pixel(bx, y + h - 1 - i);
+            }
+            // Left & Right
+            for by in y..(y + h) {
+                set_pixel(x + i, by);
+                set_pixel(x + w - 1 - i, by);
+            }
+        }
+    }
 }

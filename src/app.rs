@@ -2,6 +2,7 @@ use crate::image_item::ImageItem;
 use crate::status_bar::StatusBar;
 use crate::view_mode::ViewMode;
 use pixels::{Pixels, SurfaceTexture};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
@@ -55,6 +56,8 @@ pub struct App {
     pub status_bar: StatusBar,
     pub show_status_bar: bool,
     pub load_complete: bool,
+    pub grid_mode: bool,
+    pub marked_files: HashSet<String>,
 }
 
 impl App {
@@ -75,6 +78,8 @@ impl App {
             status_bar: StatusBar::new(),
             show_status_bar: true,
             load_complete: false,
+            grid_mode: false,
+            marked_files: HashSet::new(),
         }
     }
 
@@ -139,28 +144,30 @@ impl App {
         }
 
         // Animation
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_update);
-        self.last_update = now;
+        if !self.grid_mode {
+            let now = Instant::now();
+            let dt = now.duration_since(self.last_update);
+            self.last_update = now;
 
-        let item = &self.images[self.current_index];
-        let frame_count = item.frames.len();
+            let item = &self.images[self.current_index];
+            let frame_count = item.frames.len();
 
-        if self.is_playing && frame_count > 1 {
-            self.frame_timer += dt;
-            let current_delay = item.frames[self.current_frame_index].delay;
-            let effective_delay = if current_delay.is_zero() {
-                Duration::from_millis(100)
-            } else {
-                current_delay
-            };
+            if self.is_playing && frame_count > 1 {
+                self.frame_timer += dt;
+                let current_delay = item.frames[self.current_frame_index].delay;
+                let effective_delay = if current_delay.is_zero() {
+                    Duration::from_millis(100)
+                } else {
+                    current_delay
+                };
 
-            if self.frame_timer >= effective_delay {
-                self.frame_timer = Duration::ZERO;
-                self.current_frame_index = (self.current_frame_index + 1) % frame_count;
-            }
-            if let Some(w) = &self.window {
-                w.request_redraw();
+                if self.frame_timer >= effective_delay {
+                    self.frame_timer = Duration::ZERO;
+                    self.current_frame_index = (self.current_frame_index + 1) % frame_count;
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
             }
         }
 
@@ -190,28 +197,54 @@ impl App {
             buf_h
         };
 
-        // Render the Image
-        crate::renderer::Renderer::draw_image(
-            frame_slice,
-            buf_w,
-            available_h,
-            item,
-            self.current_frame_index,
-            scale,
-            self.off_x,
-            self.off_y,
-        );
+        // Render Content
+        if self.grid_mode {
+            let accent = crate::utils::parse_color(&config.ui.thumbnail_border_color);
+            let mark_color = crate::utils::parse_color(&config.ui.mark_color);
+            crate::renderer::Renderer::draw_grid(
+                frame_slice,
+                buf_w,
+                available_h,
+                &mut self.images,
+                self.current_index,
+                bg_color,
+                accent,
+                mark_color,
+                &self.marked_files,
+            );
+        } else {
+            // Render the Image
+            let item = &self.images[self.current_index];
+            crate::renderer::Renderer::draw_image(
+                frame_slice,
+                buf_w,
+                available_h,
+                item,
+                self.current_frame_index,
+                scale,
+                self.off_x,
+                self.off_y,
+            );
+        }
 
         // Draw Status Bar
         if self.show_status_bar && buf_h > 0 {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
+            let item = &self.images[self.current_index];
+            let is_marked = self.marked_files.contains(&item.path);
+
             self.status_bar.draw(
                 &mut fb,
-                (scale * 100.0) as u32,
+                if self.grid_mode {
+                    100
+                } else {
+                    (scale * 100.0) as u32
+                },
                 self.current_index + 1,
                 self.images.len(),
                 &item.path,
+                is_marked,
             );
         }
 
@@ -341,23 +374,76 @@ impl ApplicationHandler<AppEvent> for App {
                                     needs_redraw = true;
                                 }
                                 "h" => {
-                                    self.off_x += step;
+                                    if self.grid_mode {
+                                        if self.current_index > 0 {
+                                            self.current_index -= 1;
+                                        }
+                                    } else {
+                                        self.off_x += step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 "l" => {
-                                    self.off_x -= step;
+                                    if self.grid_mode {
+                                        if self.current_index < self.images.len() - 1 {
+                                            self.current_index += 1;
+                                        }
+                                    } else {
+                                        self.off_x -= step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 "k" => {
-                                    self.off_y += step;
+                                    if self.grid_mode {
+                                        if let Some(w) = &self.window {
+                                            let width = w.inner_size().width as u32;
+                                            let cols = (width / 190).max(1);
+                                            if self.current_index >= cols as usize {
+                                                self.current_index -= cols as usize;
+                                            }
+                                        }
+                                    } else {
+                                        self.off_y += step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 "j" => {
-                                    self.off_y -= step;
+                                    if self.grid_mode {
+                                        if let Some(w) = &self.window {
+                                            let width = w.inner_size().width as u32;
+                                            let cols = (width / 190).max(1);
+                                            if self.current_index + (cols as usize)
+                                                < self.images.len()
+                                            {
+                                                self.current_index += cols as usize;
+                                            }
+                                        }
+                                    } else {
+                                        self.off_y -= step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 "b" => {
                                     self.show_status_bar = !self.show_status_bar;
+                                    needs_redraw = true;
+                                }
+                                "m" => {
+                                    if !self.images.is_empty() {
+                                        let path = self.images[self.current_index].path.clone();
+                                        if self.marked_files.contains(&path) {
+                                            self.marked_files.remove(&path);
+                                        } else {
+                                            self.marked_files.insert(path);
+                                        }
+                                        needs_redraw = true;
+                                    }
+                                }
+                                "M" => {
+                                    for item in &self.images {
+                                        if !self.marked_files.remove(&item.path) {
+                                            self.marked_files.insert(item.path.clone());
+                                        }
+                                    }
                                     needs_redraw = true;
                                 }
                                 "=" => {
@@ -418,20 +504,61 @@ impl ApplicationHandler<AppEvent> for App {
                                 _ => return,
                             },
                             Key::Named(k) => match k {
+                                NamedKey::Enter => {
+                                    self.grid_mode = !self.grid_mode;
+                                    if !self.grid_mode {
+                                        self.reset_view_for_new_image();
+                                    }
+                                    needs_redraw = true;
+                                }
                                 NamedKey::ArrowLeft => {
-                                    self.off_x += step;
+                                    if self.grid_mode {
+                                        if self.current_index > 0 {
+                                            self.current_index -= 1;
+                                        }
+                                    } else {
+                                        self.off_x += step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 NamedKey::ArrowRight => {
-                                    self.off_x -= step;
+                                    if self.grid_mode {
+                                        if self.current_index < self.images.len() - 1 {
+                                            self.current_index += 1;
+                                        }
+                                    } else {
+                                        self.off_x -= step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 NamedKey::ArrowUp => {
-                                    self.off_y += step;
+                                    if self.grid_mode {
+                                        if let Some(w) = &self.window {
+                                            let width = w.inner_size().width as u32;
+                                            let cols = (width / 190).max(1);
+                                            if self.current_index >= cols as usize {
+                                                self.current_index -= cols as usize;
+                                            }
+                                        }
+                                    } else {
+                                        self.off_y += step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 NamedKey::ArrowDown => {
-                                    self.off_y -= step;
+                                    if self.grid_mode {
+                                        if let Some(w) = &self.window {
+                                            let width = w.inner_size().width as u32;
+                                            let cols = (width / 190).max(1);
+                                            if self.current_index + (cols as usize)
+                                                < self.images.len()
+                                            {
+                                                self.current_index += cols as usize;
+                                            }
+                                        }
+                                    } else {
+                                        self.off_y -= step;
+                                    }
                                     needs_redraw = true;
                                 }
                                 _ => return,

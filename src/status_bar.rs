@@ -80,6 +80,7 @@ impl StatusBar {
         index: usize,
         total: usize,
         path: &str,
+        is_marked: bool,
     ) {
         // Lock both globals for the duration of the draw
         let mut font_system = UI_FONT_SYSTEM.get().unwrap().lock().unwrap();
@@ -97,10 +98,9 @@ impl StatusBar {
         let family_name = Family::Name(&config.ui.font_family);
         let attrs = Attrs::new().family(family_name);
 
-        // Update Text
-        self.left_buffer
-            .set_text(&mut font_system, path, &attrs, Shaping::Advanced, None);
-        let right_text = format!("{}% {}/{}", scale_percent, index, total);
+        // Calculate right text position and width
+        let mark = if is_marked { "*" } else { "" };
+        let right_text = format!("{} {}% {}/{}", mark, scale_percent, index, total);
         self.right_buffer.set_text(
             &mut font_system,
             &right_text,
@@ -108,18 +108,47 @@ impl StatusBar {
             Shaping::Advanced,
             None,
         );
-
-        // Shape buffers
-        self.left_buffer.shape_until_scroll(&mut font_system, false);
         self.right_buffer
             .shape_until_scroll(&mut font_system, false);
 
-        // Draw Full-width Background Bar
-        target.draw_rect(0, bar_top, width, self.height, self.background_color);
-
-        // Calculate right text position
         let right_w = Self::measure_width(&self.right_buffer) as u32;
         let right_x = (width as i32) - (right_w as i32) - 5;
+
+        // Calculate available width for the path on the left
+        // Leave a margin of roughly 5 chars (estimated by font size)
+        let margin_px = (config.ui.font_size as u32 * 5).max(50);
+        let max_path_w = (right_x - 5 - margin_px as i32).max(0) as u32;
+
+        // Truncate path if it's too long
+        let mut display_path = path.to_string();
+        self.left_buffer.set_text(
+            &mut font_system,
+            &display_path,
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        self.left_buffer.shape_until_scroll(&mut font_system, false);
+
+        if Self::measure_width(&self.left_buffer) > max_path_w as f32 {
+            display_path = format!("...{}", path);
+            while display_path.len() > 4
+                && Self::measure_width(&self.left_buffer) > max_path_w as f32
+            {
+                display_path.remove(3); // Remove char after "..."
+                self.left_buffer.set_text(
+                    &mut font_system,
+                    &display_path,
+                    &attrs,
+                    Shaping::Advanced,
+                    None,
+                );
+                self.left_buffer.shape_until_scroll(&mut font_system, false);
+            }
+        }
+
+        // Draw Full-width Background Bar
+        target.draw_rect(0, bar_top, width, self.height, self.background_color);
 
         // Draw Buffers using global engines
         Self::draw_buffer(
