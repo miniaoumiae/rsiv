@@ -201,7 +201,7 @@ impl App {
             }
             Action::GridMoveUp => {
                 if let Some(w) = &self.window {
-                    let width = w.inner_size().width as u32;
+                    let width = w.inner_size().width;
                     let cols = (width / GRID_CELL_SIZE).max(1);
                     if self.current_index >= cols as usize {
                         self.current_index -= cols as usize;
@@ -211,7 +211,7 @@ impl App {
             }
             Action::GridMoveDown => {
                 if let Some(w) = &self.window {
-                    let width = w.inner_size().width as u32;
+                    let width = w.inner_size().width;
                     let cols = (width / GRID_CELL_SIZE).max(1);
                     if self.current_index + (cols as usize) < self.images.len() {
                         self.current_index += cols as usize;
@@ -308,7 +308,7 @@ impl App {
                     }
                 }
             }
-            Action::MarkAll => {
+            Action::ToggleMarks => {
                 for item_slot in &self.images {
                     if let ImageSlot::Loaded(item) = item_slot {
                         if !self.marked_files.remove(&item.path) {
@@ -442,10 +442,13 @@ impl App {
 
         // Render Content
         if self.grid_mode {
-            let accent = crate::utils::parse_color(&config.ui.thumbnail_border_color);
-            let mark_color = crate::utils::parse_color(&config.ui.mark_color);
-            let loading_color = crate::utils::parse_color(&config.ui.loading_color);
-            let error_color = crate::utils::parse_color(&config.ui.error_color);
+            let colors = crate::renderer::GridColors {
+                bg: bg_color,
+                accent: crate::utils::parse_color(&config.ui.thumbnail_border_color),
+                mark: crate::utils::parse_color(&config.ui.mark_color),
+                loading: crate::utils::parse_color(&config.ui.loading_color),
+                error: crate::utils::parse_color(&config.ui.error_color),
+            };
 
             crate::renderer::Renderer::draw_grid(
                 frame_slice,
@@ -453,26 +456,20 @@ impl App {
                 available_h,
                 &mut self.images,
                 self.current_index,
-                bg_color,
-                accent,
-                mark_color,
-                loading_color,
-                error_color,
+                &colors,
                 &self.marked_files,
             );
         } else {
             // Render the Image
             if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                crate::renderer::Renderer::draw_image(
-                    frame_slice,
-                    buf_w,
-                    available_h,
+                let params = crate::renderer::DrawImageParams {
                     item,
-                    self.current_frame_index,
+                    frame_idx: self.current_frame_index,
                     scale,
-                    self.off_x,
-                    self.off_y,
-                );
+                    off_x: self.off_x,
+                    off_y: self.off_y,
+                };
+                crate::renderer::Renderer::draw_image(frame_slice, buf_w, available_h, &params);
             }
         }
 
@@ -660,7 +657,7 @@ impl ApplicationHandler<AppEvent> for App {
                             | Action::FlipHorizontal
                             | Action::FlipVertical
                             | Action::MarkFile
-                            | Action::MarkAll) => {
+                            | Action::ToggleMarks) => {
                                 needs_redraw = self.handle_image_ops_action(a);
                             }
                             a @ (Action::ToggleStatusBar

@@ -64,10 +64,11 @@ impl ImageItem {
     }
 
     fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<Self, String> {
-        let mut opt = Options::default();
-        opt.resources_dir = path_obj.parent().map(|p| p.to_path_buf());
-
-        opt.fontdb = Arc::new(crate::utils::get_svg_font_db().clone());
+        let opt = Options {
+            resources_dir: path_obj.parent().map(|p| p.to_path_buf()),
+            fontdb: Arc::new(crate::utils::get_svg_font_db().clone()),
+            ..Default::default()
+        };
 
         let tree =
             Tree::from_data(file_data, &opt).map_err(|e| format!("SVG Parse Error: {}", e))?;

@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 static CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 #[serde(default)]
 pub struct AppConfig {
     pub keybindings: Keybindings,
@@ -52,16 +52,6 @@ impl AppConfig {
         }
 
         None
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            keybindings: Keybindings::default(),
-            ui: Ui::default(),
-            options: Options::default(),
-        }
     }
 }
 
@@ -198,19 +188,9 @@ impl Default for Ui {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 #[serde(default)]
 pub struct Options {
     pub auto_center: bool,
     pub pan_limit: bool,
 }
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            auto_center: false,
-            pan_limit: false,
-        }
-    }
-}
-

@@ -1,5 +1,23 @@
 use crate::image_item::{ImageItem, ImageSlot};
 
+pub struct GridColors {
+    pub bg: (u8, u8, u8),
+    pub accent: (u8, u8, u8),
+    pub mark: (u8, u8, u8),
+    pub loading: (u8, u8, u8),
+    pub error: (u8, u8, u8),
+}
+
+pub struct DrawImageParams<'a> {
+    pub item: &'a ImageItem,
+    pub frame_idx: usize,
+    pub scale: f64,
+    pub off_x: i32,
+    pub off_y: i32,
+}
+
+struct Rect(i32, i32, i32, i32);
+
 pub struct Renderer;
 
 impl Renderer {
@@ -16,12 +34,14 @@ impl Renderer {
         frame: &mut [u8],
         buf_w: i32,
         available_h: i32,
-        item: &ImageItem,
-        frame_idx: usize,
-        scale: f64,
-        off_x: i32,
-        off_y: i32,
+        params: &DrawImageParams,
     ) {
+        let item = params.item;
+        let frame_idx = params.frame_idx;
+        let scale = params.scale;
+        let off_x = params.off_x;
+        let off_y = params.off_y;
+
         let img_w = item.width as f64;
         let img_h = item.height as f64;
 
@@ -99,11 +119,7 @@ impl Renderer {
         buf_h: i32,
         images: &mut [ImageSlot],
         selected_idx: usize,
-        bg_color: (u8, u8, u8),
-        accent_color: (u8, u8, u8),
-        mark_color: (u8, u8, u8),
-        loading_color: (u8, u8, u8),
-        error_color: (u8, u8, u8),
+        colors: &GridColors,
         marked_paths: &std::collections::HashSet<String>,
     ) {
         let thumb_size = 160;
@@ -125,7 +141,7 @@ impl Renderer {
         };
 
         // Clear background
-        Self::clear(frame, bg_color);
+        Self::clear(frame, colors.bg);
 
         for (i, slot) in images.iter_mut().enumerate() {
             let col = (i as u32) % cols;
@@ -145,11 +161,17 @@ impl Renderer {
                 let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
 
                 let color = match slot {
-                    ImageSlot::Error(_) => error_color,
-                    _ => loading_color,
+                    ImageSlot::Error(_) => colors.error,
+                    _ => colors.loading,
                 };
 
-                Self::draw_border(frame, buf_w, buf_h, t_x, t_y, p_size, p_size, color);
+                Self::draw_border(
+                    frame,
+                    buf_w,
+                    buf_h,
+                    Rect(t_x, t_y, p_size, p_size),
+                    color,
+                );
 
                 if i == selected_idx {
                     let border_gap = 1;
@@ -159,11 +181,13 @@ impl Renderer {
                         frame,
                         buf_w,
                         buf_h,
-                        t_x - offset,
-                        t_y - offset,
-                        p_size + offset * 2,
-                        p_size + offset * 2,
-                        accent_color,
+                        Rect(
+                            t_x - offset,
+                            t_y - offset,
+                            p_size + offset * 2,
+                            p_size + offset * 2,
+                        ),
+                        colors.accent,
                     );
                 }
                 continue;
@@ -181,7 +205,7 @@ impl Renderer {
                         let src_row_start = (row_idx * t_w) as usize * 4;
                         let dest_row_start = (dest_y * buf_w + t_x) as usize * 4;
 
-                        let row_len = (t_w as usize).min((buf_w as i32 - t_x).max(0) as usize) * 4;
+                        let row_len = (t_w as usize).min((buf_w - t_x).max(0) as usize) * 4;
 
                         if src_row_start + row_len <= pixels.len()
                             && dest_row_start + row_len <= frame.len()
@@ -227,11 +251,13 @@ impl Renderer {
                         frame,
                         buf_w,
                         buf_h,
-                        t_x - offset,
-                        t_y - offset,
-                        t_w as i32 + offset * 2,
-                        t_h as i32 + offset * 2,
-                        accent_color,
+                        Rect(
+                            t_x - offset,
+                            t_y - offset,
+                            t_w as i32 + offset * 2,
+                            t_h as i32 + offset * 2,
+                        ),
+                        colors.accent,
                     );
                 }
 
@@ -252,9 +278,9 @@ impl Renderer {
                             if px >= 0 && px < buf_w && py >= 0 && py < buf_h {
                                 let idx = ((py * buf_w + px) * 4) as usize;
                                 if idx + 4 <= frame.len() {
-                                    frame[idx] = mark_color.0;
-                                    frame[idx + 1] = mark_color.1;
-                                    frame[idx + 2] = mark_color.2;
+                                    frame[idx] = colors.mark.0;
+                                    frame[idx + 1] = colors.mark.1;
+                                    frame[idx + 2] = colors.mark.2;
                                     frame[idx + 3] = 255;
                                 }
                             }
@@ -269,12 +295,10 @@ impl Renderer {
         frame: &mut [u8],
         buf_w: i32,
         buf_h: i32,
-        x: i32,
-        y: i32,
-        w: i32,
-        h: i32,
+        rect: Rect,
         color: (u8, u8, u8),
     ) {
+        let Rect(x, y, w, h) = rect;
         let thickness = 4;
         let color_alpha = [color.0, color.1, color.2, 255];
 

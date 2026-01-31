@@ -46,8 +46,8 @@ pub enum Action {
     ToggleGrid,
     ToggleStatusBar,
     ToggleAnimation,
+    ToggleMarks,
     MarkFile,
-    MarkAll,
 }
 
 pub struct Binding {
@@ -79,7 +79,7 @@ impl Binding {
                     && mods_match
                     && (b.mode == current_mode || b.mode == BindingMode::Global)
             })
-            .map(|b| b.action.clone())
+            .map(|b| b.action)
     }
 
     pub fn get_all_bindings() -> Vec<Binding> {
@@ -93,7 +93,7 @@ impl Binding {
                             key,
                             mods,
                             mode,
-                            action: action.clone(),
+                            action,
                         });
                     }
                 }
@@ -143,7 +143,7 @@ impl Binding {
             &mut bindings,
             &k.mark_all.0,
             BindingMode::Global,
-            Action::MarkAll,
+            Action::ToggleMarks,
         );
         add(
             &mut bindings,
