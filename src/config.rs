@@ -1,3 +1,4 @@
+use serde::de::Deserializer;
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -64,56 +65,105 @@ impl Default for AppConfig {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BindingList(pub Vec<String>);
+
+impl<'de> Deserialize<'de> for BindingList {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StringOrVec {
+            String(String),
+            Vec(Vec<String>),
+        }
+
+        match StringOrVec::deserialize(deserializer)? {
+            StringOrVec::String(s) => {
+                if s.eq_ignore_ascii_case("none") {
+                    Ok(BindingList(vec![]))
+                } else {
+                    Ok(BindingList(vec![s]))
+                }
+            }
+            StringOrVec::Vec(v) => Ok(BindingList(v)),
+        }
+    }
+}
+
+// Helper to construct BindingList
+impl<I, S> From<I> for BindingList
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    fn from(iter: I) -> Self {
+        BindingList(iter.into_iter().map(|s| s.into()).collect())
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Keybindings {
-    pub quit: Vec<String>,
-    pub image_flip_horizontal: Vec<String>,
-    pub image_flip_vertical: Vec<String>,
-    pub image_next: Vec<String>,
-    pub image_previous: Vec<String>,
-    pub rotate_cw: Vec<String>,
-    pub rotate_ccw: Vec<String>,
-    pub zoom_in: Vec<String>,
-    pub zoom_out: Vec<String>,
-    pub zoom_reset: Vec<String>,
-    pub fit_width: Vec<String>,
-    pub fit_height: Vec<String>,
-    pub fit_best: Vec<String>,
-    pub fit_best_no_upscale: Vec<String>,
-    pub view_reset_pan: Vec<String>,
-    pub view_pan_left: Vec<String>,
-    pub view_pan_down: Vec<String>,
-    pub view_pan_up: Vec<String>,
-    pub view_pan_right: Vec<String>,
-    pub toggle_status_bar: Vec<String>,
-    pub toggle_animation: Vec<String>,
+    pub quit: BindingList,
+    pub image_flip_horizontal: BindingList,
+    pub image_flip_vertical: BindingList,
+    pub image_next: BindingList,
+    pub image_previous: BindingList,
+    pub rotate_cw: BindingList,
+    pub rotate_ccw: BindingList,
+    pub zoom_in: BindingList,
+    pub zoom_out: BindingList,
+    pub zoom_reset: BindingList,
+    pub fit_width: BindingList,
+    pub fit_height: BindingList,
+    pub fit_best: BindingList,
+    pub fit_best_no_upscale: BindingList,
+    pub view_reset_pan: BindingList,
+    pub view_pan_left: BindingList,
+    pub view_pan_down: BindingList,
+    pub view_pan_up: BindingList,
+    pub view_pan_right: BindingList,
+    pub toggle_status_bar: BindingList,
+    pub toggle_animation: BindingList,
+    pub toggle_grid: BindingList,
+    pub mark_file: BindingList,
+    pub mark_all: BindingList,
+    pub first_image: BindingList,
+    pub last_image: BindingList,
 }
 
 impl Default for Keybindings {
     fn default() -> Self {
         Self {
-            quit: vec!["q".into()],
-            image_flip_horizontal: vec!["_".into()],
-            image_flip_vertical: vec!["?".into()],
-            image_next: vec!["n".into()],
-            image_previous: vec!["p".into()],
-            rotate_cw: vec![">".into()],
-            rotate_ccw: vec!["<".into()],
-            zoom_in: vec!["+".into()],
-            zoom_out: vec!["-".into()],
-            zoom_reset: vec!["=".into()],
-            fit_width: vec!["W".into()],
-            fit_height: vec!["H".into()],
-            fit_best: vec!["f".into()],
-            fit_best_no_upscale: vec!["F".into()],
-            view_reset_pan: vec!["z".into()],
-            view_pan_left: vec!["h".into(), "Left".into()],
-            view_pan_down: vec!["j".into(), "Down".into()],
-            view_pan_up: vec!["k".into(), "Up".into()],
-            view_pan_right: vec!["l".into(), "Right".into()],
-            toggle_status_bar: vec!["b".into()],
-            toggle_animation: vec!["Ctrl+a".into()],
+            quit: vec!["q"].into(),
+            image_flip_horizontal: vec!["_"].into(),
+            image_flip_vertical: vec!["?"].into(),
+            image_next: vec!["n"].into(),
+            image_previous: vec!["p"].into(),
+            rotate_cw: vec![">"].into(),
+            rotate_ccw: vec!["<"].into(),
+            zoom_in: vec!["+"].into(),
+            zoom_out: vec!["-"].into(),
+            zoom_reset: vec!["="].into(),
+            fit_width: vec!["W"].into(),
+            fit_height: vec!["H"].into(),
+            fit_best: vec!["f"].into(),
+            fit_best_no_upscale: vec!["F"].into(),
+            view_reset_pan: vec!["z"].into(),
+            view_pan_left: vec!["h", "Left"].into(),
+            view_pan_down: vec!["j", "Down"].into(),
+            view_pan_up: vec!["k", "Up"].into(),
+            view_pan_right: vec!["l", "Right"].into(),
+            toggle_status_bar: vec!["b"].into(),
+            toggle_animation: vec!["Ctrl+a"].into(),
+            toggle_grid: vec!["Enter"].into(),
+            mark_file: vec!["m"].into(),
+            mark_all: vec!["M"].into(),
+            first_image: vec!["g"].into(),
+            last_image: vec!["G"].into(),
         }
     }
 }
@@ -163,3 +213,4 @@ impl Default for Options {
         }
     }
 }
+

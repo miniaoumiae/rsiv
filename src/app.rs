@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
 
 #[cfg(any(
@@ -386,268 +386,190 @@ impl ApplicationHandler<AppEvent> for App {
                     let mut changed_scale = false;
                     let mut needs_redraw = false;
 
-                    // Handle Ctrl-a
-                    if self.modifiers.control_key() {
-                        if let Key::Character(c) = &event.logical_key {
-                            if c.as_str() == "a" {
+                    if let Some(action) = crate::keybinds::Binding::resolve(&event, self.modifiers, self.grid_mode) {
+                        match action {
+                            crate::keybinds::Action::Quit => _el.exit(),
+                            crate::keybinds::Action::ResetView => {
+                                self.off_x = 0;
+                                self.off_y = 0;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::FitToWindow => {
+                                self.mode = ViewMode::FitToWindow;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::BestFit => {
+                                self.mode = ViewMode::BestFit;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::FitWidth => {
+                                self.mode = ViewMode::FitWidth;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::FitHeight => {
+                                self.mode = ViewMode::FitHeight;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::PanLeft => {
+                                self.off_x += step;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::PanRight => {
+                                self.off_x -= step;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::PanUp => {
+                                self.off_y += step;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::PanDown => {
+                                self.off_y -= step;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::GridMoveLeft => {
+                                if self.current_index > 0 {
+                                    self.current_index -= 1;
+                                    needs_redraw = true;
+                                }
+                            }
+                            crate::keybinds::Action::GridMoveRight => {
+                                if self.current_index < self.images.len() - 1 {
+                                    self.current_index += 1;
+                                    needs_redraw = true;
+                                }
+                            }
+                            crate::keybinds::Action::GridMoveUp => {
+                                if let Some(w) = &self.window {
+                                    let width = w.inner_size().width as u32;
+                                    let cols = (width / 190).max(1);
+                                    if self.current_index >= cols as usize {
+                                        self.current_index -= cols as usize;
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::GridMoveDown => {
+                                if let Some(w) = &self.window {
+                                    let width = w.inner_size().width as u32;
+                                    let cols = (width / 190).max(1);
+                                    if self.current_index + (cols as usize) < self.images.len() {
+                                        self.current_index += cols as usize;
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::ToggleStatusBar => {
+                                self.show_status_bar = !self.show_status_bar;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::MarkFile => {
+                                if !self.images.is_empty() {
+                                    if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
+                                        let path = item.path.clone();
+                                        if self.marked_files.contains(&path) {
+                                            self.marked_files.remove(&path);
+                                        } else {
+                                            self.marked_files.insert(path);
+                                        }
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::MarkAll => {
+                                for item_slot in &self.images {
+                                    if let ImageSlot::Loaded(item) = item_slot {
+                                        if !self.marked_files.remove(&item.path) {
+                                            self.marked_files.insert(item.path.clone());
+                                        }
+                                    }
+                                }
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::ZoomReset => {
+                                self.mode = ViewMode::Absolute;
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::ZoomIn => {
+                                self.mode = ViewMode::Zoom(old_scale * 1.1);
+                                changed_scale = true;
+                            }
+                            crate::keybinds::Action::ZoomOut => {
+                                self.mode = ViewMode::Zoom(old_scale / 1.1);
+                                changed_scale = true;
+                            }
+                            crate::keybinds::Action::NextImage => {
+                                if !self.images.is_empty() {
+                                    self.current_index = (self.current_index + 1) % self.images.len();
+                                    self.reset_view_for_new_image();
+                                    needs_redraw = true;
+                                }
+                            }
+                            crate::keybinds::Action::PrevImage => {
+                                if !self.images.is_empty() {
+                                    self.current_index = (self.current_index + self.images.len() - 1) % self.images.len();
+                                    self.reset_view_for_new_image();
+                                    needs_redraw = true;
+                                }
+                            }
+                            crate::keybinds::Action::FirstImage => {
+                                if !self.images.is_empty() {
+                                    self.current_index = 0;
+                                    self.reset_view_for_new_image();
+                                    needs_redraw = true;
+                                }
+                            }
+                            crate::keybinds::Action::LastImage => {
+                                if !self.images.is_empty() {
+                                    self.current_index = self.images.len() - 1;
+                                    self.reset_view_for_new_image();
+                                    needs_redraw = true;
+                                }
+                            }
+                            crate::keybinds::Action::RotateCW => {
+                                if !self.images.is_empty() {
+                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                                        item.rotate(true);
+                                        self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::RotateCCW => {
+                                if !self.images.is_empty() {
+                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                                        item.rotate(false);
+                                        self.reset_view_for_new_image();
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::FlipHorizontal => {
+                                if !self.images.is_empty() {
+                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                                        item.flip_horizontal();
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::FlipVertical => {
+                                if !self.images.is_empty() {
+                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                                        item.flip_vertical();
+                                        needs_redraw = true;
+                                    }
+                                }
+                            }
+                            crate::keybinds::Action::ToggleGrid => {
+                                self.grid_mode = !self.grid_mode;
+                                if !self.grid_mode {
+                                    self.reset_view_for_new_image();
+                                }
+                                needs_redraw = true;
+                            }
+                            crate::keybinds::Action::ToggleAnimation => {
                                 self.is_playing = !self.is_playing;
                                 needs_redraw = true;
                             }
-                        }
-                    }
-
-                    if !needs_redraw {
-                        match event.logical_key {
-                            Key::Character(c) => match c.as_str() {
-                                "q" => _el.exit(),
-                                "z" => {
-                                    self.off_x = 0;
-                                    self.off_y = 0;
-                                    needs_redraw = true;
-                                }
-                                "f" => {
-                                    self.mode = ViewMode::FitToWindow;
-                                    needs_redraw = true;
-                                }
-                                "F" => {
-                                    self.mode = ViewMode::BestFit;
-                                    needs_redraw = true;
-                                }
-                                "W" => {
-                                    self.mode = ViewMode::FitWidth;
-                                    needs_redraw = true;
-                                }
-                                "H" => {
-                                    self.mode = ViewMode::FitHeight;
-                                    needs_redraw = true;
-                                }
-                                "h" => {
-                                    if self.grid_mode {
-                                        if self.current_index > 0 {
-                                            self.current_index -= 1;
-                                        }
-                                    } else {
-                                        self.off_x += step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                "l" => {
-                                    if self.grid_mode {
-                                        if self.current_index < self.images.len() - 1 {
-                                            self.current_index += 1;
-                                        }
-                                    } else {
-                                        self.off_x -= step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                "k" => {
-                                    if self.grid_mode {
-                                        if let Some(w) = &self.window {
-                                            let width = w.inner_size().width as u32;
-                                            let cols = (width / 190).max(1);
-                                            if self.current_index >= cols as usize {
-                                                self.current_index -= cols as usize;
-                                            }
-                                        }
-                                    } else {
-                                        self.off_y += step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                "j" => {
-                                    if self.grid_mode {
-                                        if let Some(w) = &self.window {
-                                            let width = w.inner_size().width as u32;
-                                            let cols = (width / 190).max(1);
-                                            if self.current_index + (cols as usize)
-                                                < self.images.len()
-                                            {
-                                                self.current_index += cols as usize;
-                                            }
-                                        }
-                                    } else {
-                                        self.off_y -= step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                "b" => {
-                                    self.show_status_bar = !self.show_status_bar;
-                                    needs_redraw = true;
-                                }
-                                "m" => {
-                                    if !self.images.is_empty() {
-                                        if let ImageSlot::Loaded(item) =
-                                            &self.images[self.current_index]
-                                        {
-                                            let path = item.path.clone();
-                                            if self.marked_files.contains(&path) {
-                                                self.marked_files.remove(&path);
-                                            } else {
-                                                self.marked_files.insert(path);
-                                            }
-                                            needs_redraw = true;
-                                        }
-                                    }
-                                }
-                                "M" => {
-                                    for item_slot in &self.images {
-                                        if let ImageSlot::Loaded(item) = item_slot {
-                                            if !self.marked_files.remove(&item.path) {
-                                                self.marked_files.insert(item.path.clone());
-                                            }
-                                        }
-                                    }
-                                    needs_redraw = true;
-                                }
-                                "=" => {
-                                    self.mode = ViewMode::Absolute;
-                                    needs_redraw = true;
-                                }
-                                "+" => {
-                                    self.mode = ViewMode::Zoom(old_scale * 1.1);
-                                    changed_scale = true;
-                                }
-                                "-" => {
-                                    self.mode = ViewMode::Zoom(old_scale / 1.1);
-                                    changed_scale = true;
-                                }
-                                "n" => {
-                                    if !self.images.is_empty() {
-                                        self.current_index =
-                                            (self.current_index + 1) % self.images.len();
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
-                                    }
-                                }
-                                "p" => {
-                                    if !self.images.is_empty() {
-                                        self.current_index =
-                                            (self.current_index + self.images.len() - 1)
-                                                % self.images.len();
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
-                                    }
-                                }
-                                "g" => {
-                                    if !self.images.is_empty() {
-                                        self.current_index = 0;
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
-                                    }
-                                }
-                                "G" => {
-                                    if !self.images.is_empty() {
-                                        self.current_index = self.images.len() - 1;
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
-                                    }
-                                }
-                                ">" => {
-                                    if !self.images.is_empty() {
-                                        if let ImageSlot::Loaded(item) =
-                                            &mut self.images[self.current_index]
-                                        {
-                                            item.rotate(true);
-                                            self.reset_view_for_new_image();
-                                            needs_redraw = true;
-                                        }
-                                    }
-                                }
-                                "<" => {
-                                    if !self.images.is_empty() {
-                                        if let ImageSlot::Loaded(item) =
-                                            &mut self.images[self.current_index]
-                                        {
-                                            item.rotate(false);
-                                            self.reset_view_for_new_image();
-                                            needs_redraw = true;
-                                        }
-                                    }
-                                }
-                                "_" => {
-                                    if !self.images.is_empty() {
-                                        if let ImageSlot::Loaded(item) =
-                                            &mut self.images[self.current_index]
-                                        {
-                                            item.flip_horizontal();
-                                            needs_redraw = true;
-                                        }
-                                    }
-                                }
-                                "?" => {
-                                    if !self.images.is_empty() {
-                                        if let ImageSlot::Loaded(item) =
-                                            &mut self.images[self.current_index]
-                                        {
-                                            item.flip_vertical();
-                                            needs_redraw = true;
-                                        }
-                                    }
-                                }
-                                _ => return,
-                            },
-                            Key::Named(k) => match k {
-                                NamedKey::Enter => {
-                                    self.grid_mode = !self.grid_mode;
-                                    if !self.grid_mode {
-                                        self.reset_view_for_new_image();
-                                    }
-                                    needs_redraw = true;
-                                }
-                                NamedKey::ArrowLeft => {
-                                    if self.grid_mode {
-                                        if self.current_index > 0 {
-                                            self.current_index -= 1;
-                                        }
-                                    } else {
-                                        self.off_x += step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                NamedKey::ArrowRight => {
-                                    if self.grid_mode {
-                                        if self.current_index < self.images.len() - 1 {
-                                            self.current_index += 1;
-                                        }
-                                    } else {
-                                        self.off_x -= step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                NamedKey::ArrowUp => {
-                                    if self.grid_mode {
-                                        if let Some(w) = &self.window {
-                                            let width = w.inner_size().width as u32;
-                                            let cols = (width / 190).max(1);
-                                            if self.current_index >= cols as usize {
-                                                self.current_index -= cols as usize;
-                                            }
-                                        }
-                                    } else {
-                                        self.off_y += step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                NamedKey::ArrowDown => {
-                                    if self.grid_mode {
-                                        if let Some(w) = &self.window {
-                                            let width = w.inner_size().width as u32;
-                                            let cols = (width / 190).max(1);
-                                            if self.current_index + (cols as usize)
-                                                < self.images.len()
-                                            {
-                                                self.current_index += cols as usize;
-                                            }
-                                        }
-                                    } else {
-                                        self.off_y -= step;
-                                    }
-                                    needs_redraw = true;
-                                }
-                                _ => return,
-                            },
-                            _ => return,
                         }
                     }
 

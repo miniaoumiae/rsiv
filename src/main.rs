@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod frame_buffer;
 mod image_item;
+mod keybinds;
 mod loader;
 mod renderer;
 mod status_bar;
