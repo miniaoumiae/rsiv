@@ -1,4 +1,5 @@
 use crate::image_item::{ImageItem, ImageSlot};
+use crate::keybinds::Action;
 use crate::status_bar::StatusBar;
 use crate::view_mode::ViewMode;
 use pixels::{Pixels, SurfaceTexture};
@@ -10,6 +11,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
+pub const GRID_CELL_SIZE: u32 = 190;
 
 #[cfg(any(
     target_os = "linux",
@@ -60,6 +62,7 @@ pub struct App {
     pub load_complete: bool,
     pub grid_mode: bool,
     pub marked_files: HashSet<String>,
+    pub bindings: Vec<crate::keybinds::Binding>,
 }
 
 impl App {
@@ -82,6 +85,7 @@ impl App {
             load_complete: false,
             grid_mode: start_in_grid_mode,
             marked_files: HashSet::new(),
+            bindings: crate::keybinds::Binding::get_all_bindings(),
         }
     }
 
@@ -141,6 +145,239 @@ impl App {
         self.current_frame_index = 0;
         self.frame_timer = Duration::ZERO;
         self.is_playing = true;
+    }
+
+    fn handle_navigation_action(&mut self, action: Action) -> bool {
+        let mut needs_redraw = false;
+        match action {
+            Action::NextImage => {
+                if !self.images.is_empty() {
+                    self.current_index = (self.current_index + 1) % self.images.len();
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
+                }
+            }
+            Action::PrevImage => {
+                if !self.images.is_empty() {
+                    self.current_index =
+                        (self.current_index + self.images.len() - 1) % self.images.len();
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
+                }
+            }
+            Action::FirstImage => {
+                if !self.images.is_empty() {
+                    self.current_index = 0;
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
+                }
+            }
+            Action::LastImage => {
+                if !self.images.is_empty() {
+                    self.current_index = self.images.len() - 1;
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
+                }
+            }
+            _ => {}
+        }
+        needs_redraw
+    }
+
+    fn handle_grid_movement_action(&mut self, action: Action) -> bool {
+        let mut needs_redraw = false;
+        match action {
+            Action::GridMoveLeft => {
+                if self.current_index > 0 {
+                    self.current_index -= 1;
+                    needs_redraw = true;
+                }
+            }
+            Action::GridMoveRight => {
+                if self.current_index < self.images.len() - 1 {
+                    self.current_index += 1;
+                    needs_redraw = true;
+                }
+            }
+            Action::GridMoveUp => {
+                if let Some(w) = &self.window {
+                    let width = w.inner_size().width as u32;
+                    let cols = (width / GRID_CELL_SIZE).max(1);
+                    if self.current_index >= cols as usize {
+                        self.current_index -= cols as usize;
+                        needs_redraw = true;
+                    }
+                }
+            }
+            Action::GridMoveDown => {
+                if let Some(w) = &self.window {
+                    let width = w.inner_size().width as u32;
+                    let cols = (width / GRID_CELL_SIZE).max(1);
+                    if self.current_index + (cols as usize) < self.images.len() {
+                        self.current_index += cols as usize;
+                        needs_redraw = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        needs_redraw
+    }
+
+    fn handle_view_action(&mut self, action: Action, old_scale: f64) -> bool {
+        let mut needs_redraw = false;
+        let mut changed_scale = false;
+        let step = 50;
+
+        match action {
+            Action::ResetView => {
+                self.off_x = 0;
+                self.off_y = 0;
+                needs_redraw = true;
+            }
+            Action::FitToWindow => {
+                self.mode = ViewMode::FitToWindow;
+                needs_redraw = true;
+            }
+            Action::BestFit => {
+                self.mode = ViewMode::BestFit;
+                needs_redraw = true;
+            }
+            Action::FitWidth => {
+                self.mode = ViewMode::FitWidth;
+                needs_redraw = true;
+            }
+            Action::FitHeight => {
+                self.mode = ViewMode::FitHeight;
+                needs_redraw = true;
+            }
+            Action::PanLeft => {
+                self.off_x += step;
+                needs_redraw = true;
+            }
+            Action::PanRight => {
+                self.off_x -= step;
+                needs_redraw = true;
+            }
+            Action::PanUp => {
+                self.off_y += step;
+                needs_redraw = true;
+            }
+            Action::PanDown => {
+                self.off_y -= step;
+                needs_redraw = true;
+            }
+            Action::ZoomReset => {
+                self.mode = ViewMode::Absolute;
+                needs_redraw = true;
+            }
+            Action::ZoomIn => {
+                self.mode = ViewMode::Zoom(old_scale * 1.1);
+                changed_scale = true;
+            }
+            Action::ZoomOut => {
+                self.mode = ViewMode::Zoom(old_scale / 1.1);
+                changed_scale = true;
+            }
+            _ => {}
+        }
+
+        if changed_scale {
+            let new_scale = self.get_current_scale();
+            self.off_x = (self.off_x as f64 * (new_scale / old_scale)) as i32;
+            self.off_y = (self.off_y as f64 * (new_scale / old_scale)) as i32;
+            needs_redraw = true;
+        }
+
+        needs_redraw
+    }
+
+    fn handle_image_ops_action(&mut self, action: Action) -> bool {
+        let mut needs_redraw = false;
+        match action {
+            Action::MarkFile => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
+                        let path = item.path.clone();
+                        if self.marked_files.contains(&path) {
+                            self.marked_files.remove(&path);
+                        } else {
+                            self.marked_files.insert(path);
+                        }
+                        needs_redraw = true;
+                    }
+                }
+            }
+            Action::MarkAll => {
+                for item_slot in &self.images {
+                    if let ImageSlot::Loaded(item) = item_slot {
+                        if !self.marked_files.remove(&item.path) {
+                            self.marked_files.insert(item.path.clone());
+                        }
+                    }
+                }
+                needs_redraw = true;
+            }
+            Action::RotateCW => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                        item.rotate(true);
+                        self.reset_view_for_new_image();
+                        needs_redraw = true;
+                    }
+                }
+            }
+            Action::RotateCCW => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                        item.rotate(false);
+                        self.reset_view_for_new_image();
+                        needs_redraw = true;
+                    }
+                }
+            }
+            Action::FlipHorizontal => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                        item.flip_horizontal();
+                        needs_redraw = true;
+                    }
+                }
+            }
+            Action::FlipVertical => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
+                        item.flip_vertical();
+                        needs_redraw = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        needs_redraw
+    }
+
+    fn handle_toggle_action(&mut self, action: Action) -> bool {
+        let mut needs_redraw = false;
+        match action {
+            Action::ToggleStatusBar => {
+                self.show_status_bar = !self.show_status_bar;
+                needs_redraw = true;
+            }
+            Action::ToggleGrid => {
+                self.grid_mode = !self.grid_mode;
+                if !self.grid_mode {
+                    self.reset_view_for_new_image();
+                }
+                needs_redraw = true;
+            }
+            Action::ToggleAnimation => {
+                self.is_playing = !self.is_playing;
+                needs_redraw = true;
+            }
+            _ => {}
+        }
+        needs_redraw
     }
 
     fn render(&mut self) {
@@ -381,203 +618,57 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state.is_pressed() {
-                    let step = 50;
                     let old_scale = self.get_current_scale();
-                    let mut changed_scale = false;
                     let mut needs_redraw = false;
 
-                    if let Some(action) = crate::keybinds::Binding::resolve(&event, self.modifiers, self.grid_mode) {
+                    if let Some(action) = crate::keybinds::Binding::resolve(
+                        &event,
+                        &self.bindings,
+                        self.modifiers,
+                        self.grid_mode,
+                    ) {
                         match action {
-                            crate::keybinds::Action::Quit => _el.exit(),
-                            crate::keybinds::Action::ResetView => {
-                                self.off_x = 0;
-                                self.off_y = 0;
-                                needs_redraw = true;
+                            Action::Quit => _el.exit(),
+                            a @ (Action::NextImage
+                            | Action::PrevImage
+                            | Action::FirstImage
+                            | Action::LastImage) => {
+                                needs_redraw = self.handle_navigation_action(a);
                             }
-                            crate::keybinds::Action::FitToWindow => {
-                                self.mode = ViewMode::FitToWindow;
-                                needs_redraw = true;
+                            a @ (Action::GridMoveLeft
+                            | Action::GridMoveRight
+                            | Action::GridMoveUp
+                            | Action::GridMoveDown) => {
+                                needs_redraw = self.handle_grid_movement_action(a);
                             }
-                            crate::keybinds::Action::BestFit => {
-                                self.mode = ViewMode::BestFit;
-                                needs_redraw = true;
+                            a @ (Action::ResetView
+                            | Action::FitToWindow
+                            | Action::BestFit
+                            | Action::FitWidth
+                            | Action::FitHeight
+                            | Action::ZoomReset
+                            | Action::ZoomIn
+                            | Action::ZoomOut
+                            | Action::PanLeft
+                            | Action::PanRight
+                            | Action::PanUp
+                            | Action::PanDown) => {
+                                needs_redraw = self.handle_view_action(a, old_scale);
                             }
-                            crate::keybinds::Action::FitWidth => {
-                                self.mode = ViewMode::FitWidth;
-                                needs_redraw = true;
+                            a @ (Action::RotateCW
+                            | Action::RotateCCW
+                            | Action::FlipHorizontal
+                            | Action::FlipVertical
+                            | Action::MarkFile
+                            | Action::MarkAll) => {
+                                needs_redraw = self.handle_image_ops_action(a);
                             }
-                            crate::keybinds::Action::FitHeight => {
-                                self.mode = ViewMode::FitHeight;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::PanLeft => {
-                                self.off_x += step;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::PanRight => {
-                                self.off_x -= step;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::PanUp => {
-                                self.off_y += step;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::PanDown => {
-                                self.off_y -= step;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::GridMoveLeft => {
-                                if self.current_index > 0 {
-                                    self.current_index -= 1;
-                                    needs_redraw = true;
-                                }
-                            }
-                            crate::keybinds::Action::GridMoveRight => {
-                                if self.current_index < self.images.len() - 1 {
-                                    self.current_index += 1;
-                                    needs_redraw = true;
-                                }
-                            }
-                            crate::keybinds::Action::GridMoveUp => {
-                                if let Some(w) = &self.window {
-                                    let width = w.inner_size().width as u32;
-                                    let cols = (width / 190).max(1);
-                                    if self.current_index >= cols as usize {
-                                        self.current_index -= cols as usize;
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::GridMoveDown => {
-                                if let Some(w) = &self.window {
-                                    let width = w.inner_size().width as u32;
-                                    let cols = (width / 190).max(1);
-                                    if self.current_index + (cols as usize) < self.images.len() {
-                                        self.current_index += cols as usize;
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::ToggleStatusBar => {
-                                self.show_status_bar = !self.show_status_bar;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::MarkFile => {
-                                if !self.images.is_empty() {
-                                    if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                                        let path = item.path.clone();
-                                        if self.marked_files.contains(&path) {
-                                            self.marked_files.remove(&path);
-                                        } else {
-                                            self.marked_files.insert(path);
-                                        }
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::MarkAll => {
-                                for item_slot in &self.images {
-                                    if let ImageSlot::Loaded(item) = item_slot {
-                                        if !self.marked_files.remove(&item.path) {
-                                            self.marked_files.insert(item.path.clone());
-                                        }
-                                    }
-                                }
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::ZoomReset => {
-                                self.mode = ViewMode::Absolute;
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::ZoomIn => {
-                                self.mode = ViewMode::Zoom(old_scale * 1.1);
-                                changed_scale = true;
-                            }
-                            crate::keybinds::Action::ZoomOut => {
-                                self.mode = ViewMode::Zoom(old_scale / 1.1);
-                                changed_scale = true;
-                            }
-                            crate::keybinds::Action::NextImage => {
-                                if !self.images.is_empty() {
-                                    self.current_index = (self.current_index + 1) % self.images.len();
-                                    self.reset_view_for_new_image();
-                                    needs_redraw = true;
-                                }
-                            }
-                            crate::keybinds::Action::PrevImage => {
-                                if !self.images.is_empty() {
-                                    self.current_index = (self.current_index + self.images.len() - 1) % self.images.len();
-                                    self.reset_view_for_new_image();
-                                    needs_redraw = true;
-                                }
-                            }
-                            crate::keybinds::Action::FirstImage => {
-                                if !self.images.is_empty() {
-                                    self.current_index = 0;
-                                    self.reset_view_for_new_image();
-                                    needs_redraw = true;
-                                }
-                            }
-                            crate::keybinds::Action::LastImage => {
-                                if !self.images.is_empty() {
-                                    self.current_index = self.images.len() - 1;
-                                    self.reset_view_for_new_image();
-                                    needs_redraw = true;
-                                }
-                            }
-                            crate::keybinds::Action::RotateCW => {
-                                if !self.images.is_empty() {
-                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                                        item.rotate(true);
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::RotateCCW => {
-                                if !self.images.is_empty() {
-                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                                        item.rotate(false);
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::FlipHorizontal => {
-                                if !self.images.is_empty() {
-                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                                        item.flip_horizontal();
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::FlipVertical => {
-                                if !self.images.is_empty() {
-                                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                                        item.flip_vertical();
-                                        needs_redraw = true;
-                                    }
-                                }
-                            }
-                            crate::keybinds::Action::ToggleGrid => {
-                                self.grid_mode = !self.grid_mode;
-                                if !self.grid_mode {
-                                    self.reset_view_for_new_image();
-                                }
-                                needs_redraw = true;
-                            }
-                            crate::keybinds::Action::ToggleAnimation => {
-                                self.is_playing = !self.is_playing;
-                                needs_redraw = true;
+                            a @ (Action::ToggleStatusBar
+                            | Action::ToggleGrid
+                            | Action::ToggleAnimation) => {
+                                needs_redraw = self.handle_toggle_action(a);
                             }
                         }
-                    }
-
-                    if changed_scale {
-                        let new_scale = self.get_current_scale();
-                        self.off_x = (self.off_x as f64 * (new_scale / old_scale)) as i32;
-                        self.off_y = (self.off_y as f64 * (new_scale / old_scale)) as i32;
-                        needs_redraw = true;
                     }
 
                     if needs_redraw {

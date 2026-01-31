@@ -8,7 +8,7 @@ pub enum BindingMode {
     Grid,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Action {
     Quit,
 
@@ -60,10 +60,10 @@ pub struct Binding {
 impl Binding {
     pub fn resolve(
         event: &winit::event::KeyEvent,
+        bindings: &[Binding],
         current_mods: ModifiersState,
         is_grid: bool,
     ) -> Option<Action> {
-        let bindings = Self::get_all_bindings();
         let current_mode = if is_grid {
             BindingMode::Grid
         } else {
@@ -71,7 +71,7 @@ impl Binding {
         };
 
         bindings
-            .into_iter()
+            .iter()
             .find(|b| {
                 let key_matches = b.key == event.logical_key;
                 let mods_match = modifiers_match(current_mods, b.mods, &b.key);
@@ -79,10 +79,10 @@ impl Binding {
                     && mods_match
                     && (b.mode == current_mode || b.mode == BindingMode::Global)
             })
-            .map(|b| b.action)
+            .map(|b| b.action.clone())
     }
 
-    fn get_all_bindings() -> Vec<Binding> {
+    pub fn get_all_bindings() -> Vec<Binding> {
         let config = AppConfig::get();
         let mut bindings = Vec::new();
         let add =
@@ -323,7 +323,7 @@ fn parse_keybinding(s: &str) -> Option<(Key, ModifiersState)> {
             "ctrl" | "control" => mods |= ModifiersState::CONTROL,
             "shift" => mods |= ModifiersState::SHIFT,
             "alt" => mods |= ModifiersState::ALT,
-            "super" | "meta" | "win" | "cmd" => mods |= ModifiersState::SUPER,
+            "super" | "meta" => mods |= ModifiersState::SUPER,
             _ => {}
         }
     }

@@ -44,7 +44,7 @@ cargo run --release -- ~/Pictures/Wa
 - [x] Basic image view modes (zoom, adjust width, adjust height, fit best)
 - [x] Basic status bar
 - [x] svg support
-- [ ] Keybinds personalisation
+- [x] Keybinds personalisation
 - [ ] command line arguments
 - [ ] Other view modes
 - [x] UI personalisation
@@ -55,5 +55,5 @@ cargo run --release -- ~/Pictures/Wa
 - [ ] Adding color filter (Gamma and Brightness, ...)
 - [ ] Config hot reload
 - [ ] Images reload on change
-- [ ] Memory usage optimization
+- [ ] Memory usage optimization (options)
 - [ ] Add search mode with n/N (n already is mapped tho ?)
