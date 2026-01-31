@@ -99,8 +99,8 @@ impl StatusBar {
         let attrs = Attrs::new().family(family_name);
 
         // Calculate right text position and width
-        let mark = if is_marked { "*" } else { "" };
-        let right_text = format!("{} {}% {}/{}", mark, scale_percent, index, total);
+        let mark = if is_marked { "* " } else { "" };
+        let right_text = format!("{}{}% {}/{}", mark, scale_percent, index, total);
         self.right_buffer.set_text(
             &mut font_system,
             &right_text,

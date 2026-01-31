@@ -30,12 +30,14 @@ use winit::platform::x11::WindowAttributesExtX11;
 
 #[derive(Debug)]
 pub enum AppEvent {
-    ImageLoaded(ImageItem),
+    InitialCount(usize),
+    ImageLoaded(usize, ImageItem),
+    ImageLoadFailed(usize),
     LoadComplete,
 }
 
 pub struct App {
-    pub images: Vec<ImageItem>,
+    pub images: Vec<Option<ImageItem>>,
     pub current_index: usize,
     pub mode: ViewMode,
     pub off_x: i32,
@@ -61,7 +63,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(images: Vec<ImageItem>) -> Self {
+    pub fn new(images: Vec<Option<ImageItem>>) -> Self {
         Self {
             images,
             current_index: 0,
@@ -100,14 +102,17 @@ impl App {
         if self.images.is_empty() {
             return 1.0;
         }
-        let item = &self.images[self.current_index];
+        let Some(item) = &self.images[self.current_index] else {
+            return 1.0;
+        };
+
         let (buf_w, buf_h) = if let Some((w, h)) = self.get_available_window_size() {
             (w, h)
         } else {
             return 1.0;
         };
 
-        // Safety check to avoid division by zero
+        // Avoid division by zero
         if buf_w <= 0.0 || buf_h <= 0.0 {
             return 1.0;
         }
@@ -145,28 +150,29 @@ impl App {
 
         // Animation
         if !self.grid_mode {
-            let now = Instant::now();
-            let dt = now.duration_since(self.last_update);
-            self.last_update = now;
+            if let Some(item) = &self.images[self.current_index] {
+                let now = Instant::now();
+                let dt = now.duration_since(self.last_update);
+                self.last_update = now;
 
-            let item = &self.images[self.current_index];
-            let frame_count = item.frames.len();
+                let frame_count = item.frames.len();
 
-            if self.is_playing && frame_count > 1 {
-                self.frame_timer += dt;
-                let current_delay = item.frames[self.current_frame_index].delay;
-                let effective_delay = if current_delay.is_zero() {
-                    Duration::from_millis(100)
-                } else {
-                    current_delay
-                };
+                if self.is_playing && frame_count > 1 {
+                    self.frame_timer += dt;
+                    let current_delay = item.frames[self.current_frame_index].delay;
+                    let effective_delay = if current_delay.is_zero() {
+                        Duration::from_millis(100)
+                    } else {
+                        current_delay
+                    };
 
-                if self.frame_timer >= effective_delay {
-                    self.frame_timer = Duration::ZERO;
-                    self.current_frame_index = (self.current_frame_index + 1) % frame_count;
-                }
-                if let Some(w) = &self.window {
-                    w.request_redraw();
+                    if self.frame_timer >= effective_delay {
+                        self.frame_timer = Duration::ZERO;
+                        self.current_frame_index = (self.current_frame_index + 1) % frame_count;
+                    }
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
                 }
             }
         }
@@ -214,38 +220,56 @@ impl App {
             );
         } else {
             // Render the Image
-            let item = &self.images[self.current_index];
-            crate::renderer::Renderer::draw_image(
-                frame_slice,
-                buf_w,
-                available_h,
-                item,
-                self.current_frame_index,
-                scale,
-                self.off_x,
-                self.off_y,
-            );
+            if let Some(item) = &self.images[self.current_index] {
+                crate::renderer::Renderer::draw_image(
+                    frame_slice,
+                    buf_w,
+                    available_h,
+                    item,
+                    self.current_frame_index,
+                    scale,
+                    self.off_x,
+                    self.off_y,
+                );
+            }
         }
 
         // Draw Status Bar
         if self.show_status_bar && buf_h > 0 {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
-            let item = &self.images[self.current_index];
-            let is_marked = self.marked_files.contains(&item.path);
 
-            self.status_bar.draw(
-                &mut fb,
-                if self.grid_mode {
-                    100
+            if let Some(item) = &self.images[self.current_index] {
+                let is_marked = self.marked_files.contains(&item.path);
+
+                self.status_bar.draw(
+                    &mut fb,
+                    if self.grid_mode {
+                        100
+                    } else {
+                        (scale * 100.0) as u32
+                    },
+                    self.current_index + 1,
+                    self.images.len(),
+                    &item.path,
+                    is_marked,
+                );
+            } else {
+                let message = if self.load_complete {
+                    "Error Loading Image"
                 } else {
-                    (scale * 100.0) as u32
-                },
-                self.current_index + 1,
-                self.images.len(),
-                &item.path,
-                is_marked,
-            );
+                    "Loading..."
+                };
+
+                self.status_bar.draw(
+                    &mut fb,
+                    0,
+                    self.current_index + 1,
+                    self.images.len(),
+                    message,
+                    false,
+                );
+            }
         }
 
         if let Err(err) = pixels.render() {
@@ -283,27 +307,25 @@ impl ApplicationHandler<AppEvent> for App {
         self.status_bar.set_scale(scale_factor as f32);
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+    fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
         match event {
-            AppEvent::ImageLoaded(item) => {
-                self.images.push(item);
-
-                // If this is the first image, render it immediately
-                if self.images.len() == 1 {
-                    self.current_index = 0;
-                    self.reset_view_for_new_image();
-                    if let Some(w) = &self.window {
-                        w.request_redraw();
-                    }
+            AppEvent::InitialCount(count) => {
+                self.images = (0..count).map(|_| None).collect();
+            }
+            AppEvent::ImageLoaded(idx, item) => {
+                if let Some(slot) = self.images.get_mut(idx) {
+                    *slot = Some(item);
+                }
+                if self.current_index == idx {
+                    self.window.as_ref().unwrap().request_redraw();
                 }
             }
-            AppEvent::LoadComplete => {
-                self.load_complete = true;
-                if self.images.is_empty() {
-                    // No images loaded, exit
-                    event_loop.exit();
+            AppEvent::ImageLoadFailed(idx) => {
+                if self.current_index == idx {
+                    self.window.as_ref().unwrap().request_redraw();
                 }
             }
+            AppEvent::LoadComplete => self.load_complete = true,
         }
     }
 
@@ -429,19 +451,23 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "m" => {
                                     if !self.images.is_empty() {
-                                        let path = self.images[self.current_index].path.clone();
-                                        if self.marked_files.contains(&path) {
-                                            self.marked_files.remove(&path);
-                                        } else {
-                                            self.marked_files.insert(path);
+                                        if let Some(item) = &self.images[self.current_index] {
+                                            let path = item.path.clone();
+                                            if self.marked_files.contains(&path) {
+                                                self.marked_files.remove(&path);
+                                            } else {
+                                                self.marked_files.insert(path);
+                                            }
+                                            needs_redraw = true;
                                         }
-                                        needs_redraw = true;
                                     }
                                 }
                                 "M" => {
-                                    for item in &self.images {
-                                        if !self.marked_files.remove(&item.path) {
-                                            self.marked_files.insert(item.path.clone());
+                                    for item_opt in &self.images {
+                                        if let Some(item) = item_opt {
+                                            if !self.marked_files.remove(&item.path) {
+                                                self.marked_files.insert(item.path.clone());
+                                            }
                                         }
                                     }
                                     needs_redraw = true;
@@ -491,28 +517,36 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 ">" => {
                                     if !self.images.is_empty() {
-                                        self.images[self.current_index].rotate(true);
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
+                                        if let Some(item) = &mut self.images[self.current_index] {
+                                            item.rotate(true);
+                                            self.reset_view_for_new_image();
+                                            needs_redraw = true;
+                                        }
                                     }
                                 }
                                 "<" => {
                                     if !self.images.is_empty() {
-                                        self.images[self.current_index].rotate(false);
-                                        self.reset_view_for_new_image();
-                                        needs_redraw = true;
+                                        if let Some(item) = &mut self.images[self.current_index] {
+                                            item.rotate(false);
+                                            self.reset_view_for_new_image();
+                                            needs_redraw = true;
+                                        }
                                     }
                                 }
                                 "_" => {
                                     if !self.images.is_empty() {
-                                        self.images[self.current_index].flip_horizontal();
-                                        needs_redraw = true;
+                                        if let Some(item) = &mut self.images[self.current_index] {
+                                            item.flip_horizontal();
+                                            needs_redraw = true;
+                                        }
                                     }
                                 }
                                 "?" => {
                                     if !self.images.is_empty() {
-                                        self.images[self.current_index].flip_vertical();
-                                        needs_redraw = true;
+                                        if let Some(item) = &mut self.images[self.current_index] {
+                                            item.flip_vertical();
+                                            needs_redraw = true;
+                                        }
                                     }
                                 }
                                 _ => return,
@@ -601,16 +635,17 @@ impl ApplicationHandler<AppEvent> for App {
                             };
 
                             if !self.images.is_empty() {
-                                let item = &self.images[self.current_index];
-                                let scale = self.get_current_scale();
-                                let img_w = (item.width as f64 * scale) as i32;
-                                let img_h = (item.height as f64 * scale) as i32;
+                                if let Some(item) = &self.images[self.current_index] {
+                                    let scale = self.get_current_scale();
+                                    let img_w = (item.width as f64 * scale) as i32;
+                                    let img_h = (item.height as f64 * scale) as i32;
 
-                                let limit_x = (buf_w / 2) + (img_w / 2) - 10;
-                                let limit_y = (buf_h / 2) + (img_h / 2) - 10;
+                                    let limit_x = (buf_w / 2) + (img_w / 2) - 10;
+                                    let limit_y = (buf_h / 2) + (img_h / 2) - 10;
 
-                                self.off_x = self.off_x.max(-limit_x).min(limit_x);
-                                self.off_y = self.off_y.max(-limit_y).min(limit_y);
+                                    self.off_x = self.off_x.max(-limit_x).min(limit_x);
+                                    self.off_y = self.off_y.max(-limit_y).min(limit_y);
+                                }
                             }
 
                             w.request_redraw();

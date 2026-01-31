@@ -97,7 +97,7 @@ impl Renderer {
         frame: &mut [u8],
         buf_w: i32,
         buf_h: i32,
-        images: &mut [ImageItem],
+        images: &mut [Option<ImageItem>],
         selected_idx: usize,
         bg_color: (u8, u8, u8),
         accent_color: (u8, u8, u8),
@@ -125,7 +125,7 @@ impl Renderer {
         // Clear background
         Self::clear(frame, bg_color);
 
-        for (i, item) in images.iter_mut().enumerate() {
+        for (i, item_opt) in images.iter_mut().enumerate() {
             let col = (i as u32) % cols;
             let row = (i as u32) / cols;
 
@@ -136,6 +136,32 @@ impl Renderer {
             if y_cell + (cell_size as i32) < 0 || y_cell > buf_h {
                 continue;
             }
+
+            let Some(item) = item_opt else {
+                let p_size = thumb_size as i32;
+                let t_x = x_cell + (thumb_size as i32 - p_size) / 2;
+                let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
+
+                let gray = (60, 60, 60);
+                Self::draw_border(frame, buf_w, buf_h, t_x, t_y, p_size, p_size, gray);
+
+                if i == selected_idx {
+                    let border_gap = 1;
+                    let thickness = 4;
+                    let offset = border_gap + thickness;
+                    Self::draw_border(
+                        frame,
+                        buf_w,
+                        buf_h,
+                        t_x - offset,
+                        t_y - offset,
+                        p_size + offset * 2,
+                        p_size + offset * 2,
+                        accent_color,
+                    );
+                }
+                continue;
+            };
 
             if let Some((t_w, t_h, pixels)) = item.get_thumbnail(thumb_size) {
                 // Center the thumbnail in the cell

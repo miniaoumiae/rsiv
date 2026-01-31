@@ -1,7 +1,7 @@
 use image::{AnimationDecoder, ImageBuffer, ImageReader, Rgba};
 use resvg::usvg::{self, Options, Tree};
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tiny_skia::Pixmap;
@@ -20,6 +20,13 @@ impl std::fmt::Debug for FrameData {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ImageFormat {
+    Static,
+    Gif,
+    Svg,
+}
+
 #[derive(Debug)]
 pub struct ImageItem {
     pub path: String,
@@ -30,43 +37,21 @@ pub struct ImageItem {
 }
 
 impl ImageItem {
-    pub fn from_path(path: &str) -> Result<Self, String> {
-        let path_obj = Path::new(path);
-        let file_data = std::fs::read(path_obj).map_err(|e| format!("Read error: {}", e))?;
-
-        let kind = infer::get(&file_data);
-        let mime = kind
-            .map(|k| k.mime_type())
-            .unwrap_or("application/octet-stream");
-
-        let is_svg_content = || {
-            let header = &file_data[..file_data.len().min(1024)];
-            let content = String::from_utf8_lossy(header);
-            content.to_lowercase().contains("<svg")
-        };
-
-        match mime {
-            "image/svg+xml" => Self::decode_svg(&file_data, path_obj),
-
-            "text/xml" | "application/xml" | "text/plain" | "application/octet-stream" => {
-                if is_svg_content() {
-                    Self::decode_svg(&file_data, path_obj)
-                } else {
-                    Err(format!(
-                        "File is {}, but no SVG data found (File: {})",
-                        mime, path
-                    ))
-                }
+    pub fn from_parts(
+        path: PathBuf,
+        format: ImageFormat,
+        file_data: Vec<u8>,
+    ) -> Result<Self, String> {
+        match format {
+            ImageFormat::Svg => Self::decode_svg(&file_data, &path),
+            ImageFormat::Gif => {
+                let path_str = path.to_str().unwrap_or_default();
+                Self::decode_gif(&file_data, path_str)
             }
-
-            "image/gif" => Self::decode_gif(&file_data, path),
-
-            m if m.starts_with("image/") => Self::decode_static(&file_data, path),
-
-            _ => Err(format!(
-                "Unsupported or mismatched format: {} (File: {})",
-                mime, path
-            )),
+            ImageFormat::Static => {
+                let path_str = path.to_str().unwrap_or_default();
+                Self::decode_static(&file_data, path_str)
+            }
         }
     }
 
