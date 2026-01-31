@@ -1,4 +1,4 @@
-use crate::image_item::ImageItem;
+use crate::image_item::{ImageItem, ImageSlot};
 use crate::status_bar::StatusBar;
 use crate::view_mode::ViewMode;
 use pixels::{Pixels, SurfaceTexture};
@@ -32,12 +32,12 @@ use winit::platform::x11::WindowAttributesExtX11;
 pub enum AppEvent {
     InitialCount(usize),
     ImageLoaded(usize, ImageItem),
-    ImageLoadFailed(usize),
+    ImageLoadFailed(usize, String),
     LoadComplete,
 }
 
 pub struct App {
-    pub images: Vec<Option<ImageItem>>,
+    pub images: Vec<ImageSlot>,
     pub current_index: usize,
     pub mode: ViewMode,
     pub off_x: i32,
@@ -63,7 +63,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(images: Vec<Option<ImageItem>>) -> Self {
+    pub fn new(images: Vec<ImageSlot>, start_in_grid_mode: bool) -> Self {
         Self {
             images,
             current_index: 0,
@@ -80,7 +80,7 @@ impl App {
             status_bar: StatusBar::new(),
             show_status_bar: true,
             load_complete: false,
-            grid_mode: false,
+            grid_mode: start_in_grid_mode,
             marked_files: HashSet::new(),
         }
     }
@@ -102,7 +102,7 @@ impl App {
         if self.images.is_empty() {
             return 1.0;
         }
-        let Some(item) = &self.images[self.current_index] else {
+        let ImageSlot::Loaded(item) = &self.images[self.current_index] else {
             return 1.0;
         };
 
@@ -150,7 +150,7 @@ impl App {
 
         // Animation
         if !self.grid_mode {
-            if let Some(item) = &self.images[self.current_index] {
+            if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
                 let now = Instant::now();
                 let dt = now.duration_since(self.last_update);
                 self.last_update = now;
@@ -207,6 +207,9 @@ impl App {
         if self.grid_mode {
             let accent = crate::utils::parse_color(&config.ui.thumbnail_border_color);
             let mark_color = crate::utils::parse_color(&config.ui.mark_color);
+            let loading_color = crate::utils::parse_color(&config.ui.loading_color);
+            let error_color = crate::utils::parse_color(&config.ui.error_color);
+
             crate::renderer::Renderer::draw_grid(
                 frame_slice,
                 buf_w,
@@ -216,11 +219,13 @@ impl App {
                 bg_color,
                 accent,
                 mark_color,
+                loading_color,
+                error_color,
                 &self.marked_files,
             );
         } else {
             // Render the Image
-            if let Some(item) = &self.images[self.current_index] {
+            if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
                 crate::renderer::Renderer::draw_image(
                     frame_slice,
                     buf_w,
@@ -239,36 +244,48 @@ impl App {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
 
-            if let Some(item) = &self.images[self.current_index] {
-                let is_marked = self.marked_files.contains(&item.path);
+            match &self.images[self.current_index] {
+                ImageSlot::Loaded(item) => {
+                    let is_marked = self.marked_files.contains(&item.path);
 
-                self.status_bar.draw(
-                    &mut fb,
-                    if self.grid_mode {
-                        100
+                    self.status_bar.draw(
+                        &mut fb,
+                        if self.grid_mode {
+                            100
+                        } else {
+                            (scale * 100.0) as u32
+                        },
+                        self.current_index + 1,
+                        self.images.len(),
+                        &item.path,
+                        is_marked,
+                    );
+                }
+                ImageSlot::Error(err) => {
+                    self.status_bar.draw(
+                        &mut fb,
+                        0,
+                        self.current_index + 1,
+                        self.images.len(),
+                        &format!("Error: {}", err),
+                        false,
+                    );
+                }
+                ImageSlot::Loading => {
+                    let message = if self.load_complete {
+                        "Error Loading Image"
                     } else {
-                        (scale * 100.0) as u32
-                    },
-                    self.current_index + 1,
-                    self.images.len(),
-                    &item.path,
-                    is_marked,
-                );
-            } else {
-                let message = if self.load_complete {
-                    "Error Loading Image"
-                } else {
-                    "Loading..."
-                };
-
-                self.status_bar.draw(
-                    &mut fb,
-                    0,
-                    self.current_index + 1,
-                    self.images.len(),
-                    message,
-                    false,
-                );
+                        "Loading..."
+                    };
+                    self.status_bar.draw(
+                        &mut fb,
+                        0,
+                        self.current_index + 1,
+                        self.images.len(),
+                        message,
+                        false,
+                    );
+                }
             }
         }
 
@@ -310,22 +327,31 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::InitialCount(count) => {
-                self.images = (0..count).map(|_| None).collect();
+                self.images = vec![ImageSlot::Loading; count];
             }
             AppEvent::ImageLoaded(idx, item) => {
                 if let Some(slot) = self.images.get_mut(idx) {
-                    *slot = Some(item);
+                    *slot = ImageSlot::Loaded(item);
                 }
                 if self.current_index == idx {
                     self.window.as_ref().unwrap().request_redraw();
                 }
             }
-            AppEvent::ImageLoadFailed(idx) => {
+            AppEvent::ImageLoadFailed(idx, err) => {
+                if let Some(slot) = self.images.get_mut(idx) {
+                    *slot = ImageSlot::Error(err);
+                }
                 if self.current_index == idx {
                     self.window.as_ref().unwrap().request_redraw();
                 }
             }
-            AppEvent::LoadComplete => self.load_complete = true,
+            AppEvent::LoadComplete => {
+                self.load_complete = true;
+                if self.images.is_empty() {
+                    eprintln!("No images found. Exiting...");
+                    _el.exit();
+                }
+            }
         }
     }
 
@@ -451,7 +477,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "m" => {
                                     if !self.images.is_empty() {
-                                        if let Some(item) = &self.images[self.current_index] {
+                                        if let ImageSlot::Loaded(item) =
+                                            &self.images[self.current_index]
+                                        {
                                             let path = item.path.clone();
                                             if self.marked_files.contains(&path) {
                                                 self.marked_files.remove(&path);
@@ -463,8 +491,8 @@ impl ApplicationHandler<AppEvent> for App {
                                     }
                                 }
                                 "M" => {
-                                    for item_opt in &self.images {
-                                        if let Some(item) = item_opt {
+                                    for item_slot in &self.images {
+                                        if let ImageSlot::Loaded(item) = item_slot {
                                             if !self.marked_files.remove(&item.path) {
                                                 self.marked_files.insert(item.path.clone());
                                             }
@@ -517,7 +545,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 ">" => {
                                     if !self.images.is_empty() {
-                                        if let Some(item) = &mut self.images[self.current_index] {
+                                        if let ImageSlot::Loaded(item) =
+                                            &mut self.images[self.current_index]
+                                        {
                                             item.rotate(true);
                                             self.reset_view_for_new_image();
                                             needs_redraw = true;
@@ -526,7 +556,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "<" => {
                                     if !self.images.is_empty() {
-                                        if let Some(item) = &mut self.images[self.current_index] {
+                                        if let ImageSlot::Loaded(item) =
+                                            &mut self.images[self.current_index]
+                                        {
                                             item.rotate(false);
                                             self.reset_view_for_new_image();
                                             needs_redraw = true;
@@ -535,7 +567,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "_" => {
                                     if !self.images.is_empty() {
-                                        if let Some(item) = &mut self.images[self.current_index] {
+                                        if let ImageSlot::Loaded(item) =
+                                            &mut self.images[self.current_index]
+                                        {
                                             item.flip_horizontal();
                                             needs_redraw = true;
                                         }
@@ -543,7 +577,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 "?" => {
                                     if !self.images.is_empty() {
-                                        if let Some(item) = &mut self.images[self.current_index] {
+                                        if let ImageSlot::Loaded(item) =
+                                            &mut self.images[self.current_index]
+                                        {
                                             item.flip_vertical();
                                             needs_redraw = true;
                                         }
@@ -635,7 +671,7 @@ impl ApplicationHandler<AppEvent> for App {
                             };
 
                             if !self.images.is_empty() {
-                                if let Some(item) = &self.images[self.current_index] {
+                                if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
                                     let scale = self.get_current_scale();
                                     let img_w = (item.width as f64 * scale) as i32;
                                     let img_h = (item.height as f64 * scale) as i32;

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tiny_skia::Pixmap;
 
+#[derive(Clone)]
 pub struct FrameData {
     pub pixels: Vec<u8>,
     pub delay: Duration,
@@ -27,7 +28,14 @@ pub enum ImageFormat {
     Svg,
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
+pub enum ImageSlot {
+    Loading,
+    Loaded(ImageItem),
+    Error(String),
+}
+
+#[derive(Debug, Clone)]
 pub struct ImageItem {
     pub path: String,
     pub width: u32,

@@ -19,6 +19,10 @@ struct Cli {
     #[arg(short, long)]
     recursive: bool,
 
+    /// Start in thumbnail mode
+    #[arg(short = 't', long)]
+    thumbnail: bool,
+
     /// Output marked files to stdout on exit
     #[arg(short, long)]
     output_marked: bool,
@@ -36,7 +40,7 @@ fn main() {
 
     // We pass cli.output_marked to App just in case it needs to know,
     // but primarily we check the app state after the loop finishes.
-    let mut app = App::new(vec![]);
+    let mut app = App::new(vec![], cli.thumbnail);
 
     loader::spawn_load_worker(cli.paths, cli.recursive, proxy);
 

@@ -128,6 +128,8 @@ pub struct Ui {
     pub font_size: u8,
     pub thumbnail_border_color: String,
     pub mark_color: String,
+    pub loading_color: String,
+    pub error_color: String,
 }
 
 impl Default for Ui {
@@ -140,6 +142,8 @@ impl Default for Ui {
             font_size: 13,
             thumbnail_border_color: "#FFFFFF".into(),
             mark_color: "#FF0000".into(),
+            loading_color: "#3c3c3c".into(),
+            error_color: "#FF0000".into(),
         }
     }
 }

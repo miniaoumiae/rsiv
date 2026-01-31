@@ -40,6 +40,10 @@ pub fn spawn_load_worker(paths: Vec<String>, recursive: bool, proxy: EventLoopPr
         // Discovery
         let mut files = Vec::new();
         for p in paths {
+            if !Path::new(&p).exists() {
+                eprintln!("Error: Path '{}' not found", p);
+                continue;
+            }
             let mut walker = WalkDir::new(p);
             if !recursive {
                 walker = walker.max_depth(1);
@@ -88,7 +92,7 @@ pub fn spawn_load_worker(paths: Vec<String>, recursive: bool, proxy: EventLoopPr
                     }
                     Err(e) => {
                         eprintln!("Decoding error at index {}: {}", idx, e);
-                        let _ = proxy.send_event(AppEvent::ImageLoadFailed(idx));
+                        let _ = proxy.send_event(AppEvent::ImageLoadFailed(idx, e.to_string()));
                     }
                 }
             });

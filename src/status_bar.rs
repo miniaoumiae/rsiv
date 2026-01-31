@@ -119,8 +119,7 @@ impl StatusBar {
         let margin_px = (config.ui.font_size as u32 * 5).max(50);
         let max_path_w = (right_x - 5 - margin_px as i32).max(0) as u32;
 
-        // Truncate path if it's too long
-        let mut display_path = path.to_string();
+        let display_path = path.to_string();
         self.left_buffer.set_text(
             &mut font_system,
             &display_path,
@@ -130,21 +129,42 @@ impl StatusBar {
         );
         self.left_buffer.shape_until_scroll(&mut font_system, false);
 
+        // Binary Search Truncation
         if Self::measure_width(&self.left_buffer) > max_path_w as f32 {
-            display_path = format!("...{}", path);
-            while display_path.len() > 4
-                && Self::measure_width(&self.left_buffer) > max_path_w as f32
-            {
-                display_path.remove(3); // Remove char after "..."
+            let full_path_chars: Vec<char> = path.chars().collect();
+            let n = full_path_chars.len();
+
+            let mut low = 0;
+            let mut high = n;
+            let mut best_str = String::from("…");
+
+            while low <= high {
+                let mid = (low + high) / 2;
+                // Create suffix from mid to end
+                let suffix: String = full_path_chars[mid..].iter().collect();
+                let test_str = format!("…{}", suffix);
+
                 self.left_buffer.set_text(
                     &mut font_system,
-                    &display_path,
+                    &test_str,
                     &attrs,
                     Shaping::Advanced,
                     None,
                 );
                 self.left_buffer.shape_until_scroll(&mut font_system, false);
+
+                if Self::measure_width(&self.left_buffer) <= max_path_w as f32 {
+                    best_str = test_str;
+                    high = mid.saturating_sub(1); // Try to include more chars (move left)
+                } else {
+                    low = mid + 1; // Need to exclude more chars (move right)
+                }
             }
+
+            // Final update with the best fitting string found
+            self.left_buffer
+                .set_text(&mut font_system, &best_str, &attrs, Shaping::Advanced, None);
+            self.left_buffer.shape_until_scroll(&mut font_system, false);
         }
 
         // Draw Full-width Background Bar

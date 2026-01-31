@@ -1,4 +1,4 @@
-use crate::image_item::ImageItem;
+use crate::image_item::{ImageItem, ImageSlot};
 
 pub struct Renderer;
 
@@ -97,11 +97,13 @@ impl Renderer {
         frame: &mut [u8],
         buf_w: i32,
         buf_h: i32,
-        images: &mut [Option<ImageItem>],
+        images: &mut [ImageSlot],
         selected_idx: usize,
         bg_color: (u8, u8, u8),
         accent_color: (u8, u8, u8),
         mark_color: (u8, u8, u8),
+        loading_color: (u8, u8, u8),
+        error_color: (u8, u8, u8),
         marked_paths: &std::collections::HashSet<String>,
     ) {
         let thumb_size = 160;
@@ -125,7 +127,7 @@ impl Renderer {
         // Clear background
         Self::clear(frame, bg_color);
 
-        for (i, item_opt) in images.iter_mut().enumerate() {
+        for (i, slot) in images.iter_mut().enumerate() {
             let col = (i as u32) % cols;
             let row = (i as u32) / cols;
 
@@ -137,13 +139,17 @@ impl Renderer {
                 continue;
             }
 
-            let Some(item) = item_opt else {
+            let ImageSlot::Loaded(item) = slot else {
                 let p_size = thumb_size as i32;
                 let t_x = x_cell + (thumb_size as i32 - p_size) / 2;
                 let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
 
-                let gray = (60, 60, 60);
-                Self::draw_border(frame, buf_w, buf_h, t_x, t_y, p_size, p_size, gray);
+                let color = match slot {
+                    ImageSlot::Error(_) => error_color,
+                    _ => loading_color,
+                };
+
+                Self::draw_border(frame, buf_w, buf_h, t_x, t_y, p_size, p_size, color);
 
                 if i == selected_idx {
                     let border_gap = 1;
@@ -295,3 +301,4 @@ impl Renderer {
         }
     }
 }
+
