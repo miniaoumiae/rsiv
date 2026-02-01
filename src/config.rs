@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub keybindings: Keybindings,
     pub ui: Ui,
     pub options: Options,
+    pub handlers: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl AppConfig {
@@ -125,6 +126,7 @@ pub struct Keybindings {
     pub mark_all: BindingList,
     pub first_image: BindingList,
     pub last_image: BindingList,
+    pub handler_prefix: BindingList,
 }
 
 impl Default for Keybindings {
@@ -157,6 +159,7 @@ impl Default for Keybindings {
             mark_all: vec!["M"].into(),
             first_image: vec!["g"].into(),
             last_image: vec!["G"].into(),
+            handler_prefix: vec!["Ctrl+x"].into(),
         }
     }
 }

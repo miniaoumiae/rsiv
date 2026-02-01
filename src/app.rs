@@ -37,6 +37,13 @@ pub enum AppEvent {
     LoadComplete,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum InputMode {
+    Normal,
+    WaitingForHandler,
+    AwaitingTarget(String),
+}
+
 pub struct App {
     pub images: Vec<ImageSlot>,
     pub current_index: usize,
@@ -54,6 +61,7 @@ pub struct App {
 
     // Input state
     pub modifiers: ModifiersState,
+    pub input_mode: InputMode,
 
     // UI
     pub status_bar: StatusBar,
@@ -80,6 +88,7 @@ impl App {
             is_playing: true,
             last_update: Instant::now(),
             frame_timer: Duration::ZERO,
+            input_mode: InputMode::Normal,
             modifiers: ModifiersState::default(),
             status_bar: StatusBar::new(),
             show_status_bar: true,
@@ -510,6 +519,7 @@ impl App {
                         self.images.len(),
                         &item.path,
                         is_marked,
+                        &self.input_mode,
                     );
                 }
                 ImageSlot::Error(err) => {
@@ -520,6 +530,7 @@ impl App {
                         self.images.len(),
                         &format!("Error: {}", err),
                         false,
+                        &self.input_mode,
                     );
                 }
                 ImageSlot::Loading => {
@@ -535,6 +546,7 @@ impl App {
                         self.images.len(),
                         message,
                         false,
+                        &self.input_mode,
                     );
                 }
             }
@@ -632,6 +644,24 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state.is_pressed() {
+                    if self.input_mode != InputMode::Normal {
+                        use winit::keyboard::{Key, NamedKey};
+
+                        let key_to_process = match &event.logical_key {
+                            Key::Named(NamedKey::Escape) => Some("Esc"),
+                            Key::Character(c) => Some(c.as_str()),
+                            _ => None,
+                        };
+
+                        if let Some(k) = key_to_process {
+                            self.handle_modal_input(k);
+                            if let Some(window) = &self.window {
+                                window.request_redraw();
+                            }
+                            return; // Block normal keybindings
+                        }
+                    }
+
                     let old_scale = self.get_current_scale();
                     let mut needs_redraw = false;
 
@@ -643,6 +673,10 @@ impl ApplicationHandler<AppEvent> for App {
                     ) {
                         match action {
                             Action::Quit => _el.exit(),
+                            Action::ScriptHandlerPrefix => {
+                                self.input_mode = InputMode::WaitingForHandler;
+                                needs_redraw = true;
+                            }
                             a @ (Action::NextImage
                             | Action::PrevImage
                             | Action::FirstImage

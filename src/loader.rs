@@ -8,7 +8,7 @@ use std::thread;
 use walkdir::WalkDir;
 use winit::event_loop::EventLoopProxy;
 
-fn identify_format(path: &Path) -> Result<ImageFormat, String> {
+pub fn identify_format(path: &Path) -> Result<ImageFormat, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 1024];
     let n = file.read(&mut buffer).map_err(|e| e.to_string())?;

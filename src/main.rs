@@ -5,6 +5,7 @@ mod image_item;
 mod keybinds;
 mod loader;
 mod renderer;
+mod script_handler;
 mod status_bar;
 mod utils;
 mod view_mode;

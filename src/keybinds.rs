@@ -49,6 +49,7 @@ pub enum Action {
     ToggleMarks,
     MarkFile,
     RemoveImage,
+    ScriptHandlerPrefix,
 }
 
 pub struct Binding {
@@ -103,6 +104,12 @@ impl Binding {
         let k = &config.keybindings;
 
         add(&mut bindings, &k.quit.0, BindingMode::Global, Action::Quit);
+        add(
+            &mut bindings,
+            &k.handler_prefix.0,
+            BindingMode::Global,
+            Action::ScriptHandlerPrefix,
+        );
         add(
             &mut bindings,
             &k.toggle_status_bar.0,

@@ -1,3 +1,4 @@
+use crate::app::InputMode;
 use crate::config::AppConfig;
 use crate::frame_buffer::FrameBuffer;
 use crate::utils;
@@ -81,6 +82,7 @@ impl StatusBar {
         total: usize,
         path: &str,
         is_marked: bool,
+        input_mode: &InputMode,
     ) {
         // Lock both globals for the duration of the draw
         let mut font_system = UI_FONT_SYSTEM.get().unwrap().lock().unwrap();
@@ -119,10 +121,17 @@ impl StatusBar {
         let margin_px = (config.ui.font_size as u32 * 5).max(50);
         let max_path_w = (right_x - 5 - margin_px as i32).max(0) as u32;
 
-        let display_path = path.to_string();
+        let display_text = match input_mode {
+            InputMode::Normal => path.to_string(),
+            InputMode::WaitingForHandler => "[Handler] Press key... (Esc to cancel)".to_string(),
+            InputMode::AwaitingTarget(_) => {
+                "[Target] (c)urrent or (m)arked? (Esc to cancel)".to_string()
+            }
+        };
+
         self.left_buffer.set_text(
             &mut font_system,
-            &display_path,
+            &display_text,
             &attrs,
             Shaping::Advanced,
             None,
