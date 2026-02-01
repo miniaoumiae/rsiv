@@ -161,7 +161,7 @@ impl ImageItem {
                     self.height,
                     first_frame.pixels.clone(),
                 ) {
-                    // We avoid using `image::imageops::thumbnail` because it distort the image
+                    // We avoid using `image::imageops::thumbnail` as it distorts the image’s aspect ratio.
                     let aspect = self.width as f64 / self.height as f64;
                     let (nwidth, nheight) = if aspect >= 1.0 {
                         (size, (size as f64 / aspect) as u32)

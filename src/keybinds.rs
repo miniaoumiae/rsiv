@@ -48,6 +48,7 @@ pub enum Action {
     ToggleAnimation,
     ToggleMarks,
     MarkFile,
+    RemoveImage,
 }
 
 pub struct Binding {
@@ -138,6 +139,12 @@ impl Binding {
             &k.mark_file.0,
             BindingMode::Global,
             Action::MarkFile,
+        );
+        add(
+            &mut bindings,
+            &k.remove_image.0,
+            BindingMode::Global,
+            Action::RemoveImage,
         );
         add(
             &mut bindings,
@@ -309,27 +316,33 @@ fn modifiers_match(current: ModifiersState, required: ModifiersState, key: &Key)
 }
 
 fn parse_keybinding(s: &str) -> Option<(Key, ModifiersState)> {
-    let parts: Vec<&str> = s.split('+').collect();
-    if parts.is_empty() {
-        return None;
-    }
+    let (mods_part, key_part) = if s == "+" {
+        ("", "+")
+    } else if s.ends_with("++") {
+        (&s[..s.len() - 1], "+")
+    } else {
+        match s.rsplit_once('+') {
+            Some((m, k)) => (m, k),
+            None => ("", s),
+        }
+    };
 
     let mut mods = ModifiersState::default();
-    let key_part = parts.last().unwrap(); // The last part is the key
 
-    // Parse modifiers
-    for mod_str in &parts[..parts.len() - 1] {
-        match mod_str.to_lowercase().as_str() {
-            "ctrl" | "control" => mods |= ModifiersState::CONTROL,
-            "shift" => mods |= ModifiersState::SHIFT,
-            "alt" => mods |= ModifiersState::ALT,
-            "super" | "meta" => mods |= ModifiersState::SUPER,
-            _ => {}
+    if !mods_part.is_empty() {
+        for mod_str in mods_part.split('+') {
+            match mod_str.to_lowercase().as_str() {
+                "ctrl" | "control" => mods |= ModifiersState::CONTROL,
+                "shift" => mods |= ModifiersState::SHIFT,
+                "alt" => mods |= ModifiersState::ALT,
+                "super" | "meta" => mods |= ModifiersState::SUPER,
+                _ => {}
+            }
         }
     }
 
     // Parse Key
-    let key = match *key_part {
+    let key = match key_part {
         "Left" => Key::Named(NamedKey::ArrowLeft),
         "Right" => Key::Named(NamedKey::ArrowRight),
         "Up" => Key::Named(NamedKey::ArrowUp),

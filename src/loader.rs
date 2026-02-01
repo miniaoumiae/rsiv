@@ -58,7 +58,7 @@ pub fn spawn_load_worker(paths: Vec<String>, recursive: bool, proxy: EventLoopPr
         }
         files.sort();
 
-        // 2. Sequential Identification
+        // Sequential Identification
         let tasks: Vec<(PathBuf, ImageFormat)> = files
             .into_iter()
             .filter_map(|path| match identify_format(&path) {
@@ -76,7 +76,7 @@ pub fn spawn_load_worker(paths: Vec<String>, recursive: bool, proxy: EventLoopPr
         // Inform the UI of the total number of valid image slots to create
         let _ = proxy.send_event(AppEvent::InitialCount(tasks.len()));
 
-        // 3. Parallel Decoding
+        // Parallel Decoding
         tasks
             .into_par_iter()
             .enumerate()

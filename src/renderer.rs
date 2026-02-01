@@ -30,12 +30,7 @@ impl Renderer {
         }
     }
 
-    pub fn draw_image(
-        frame: &mut [u8],
-        buf_w: i32,
-        available_h: i32,
-        params: &DrawImageParams,
-    ) {
+    pub fn draw_image(frame: &mut [u8], buf_w: i32, available_h: i32, params: &DrawImageParams) {
         let item = params.item;
         let frame_idx = params.frame_idx;
         let scale = params.scale;
@@ -122,8 +117,9 @@ impl Renderer {
         colors: &GridColors,
         marked_paths: &std::collections::HashSet<String>,
     ) {
-        let thumb_size = 160;
-        let padding = 30;
+        let config = crate::config::AppConfig::get();
+        let thumb_size = config.options.thumbnail_size;
+        let padding = config.options.grid_pading;
         let cell_size = thumb_size + padding;
 
         let cols = (buf_w as u32 / cell_size).max(1);
@@ -165,13 +161,7 @@ impl Renderer {
                     _ => colors.loading,
                 };
 
-                Self::draw_border(
-                    frame,
-                    buf_w,
-                    buf_h,
-                    Rect(t_x, t_y, p_size, p_size),
-                    color,
-                );
+                Self::draw_border(frame, buf_w, buf_h, Rect(t_x, t_y, p_size, p_size), color);
 
                 if i == selected_idx {
                     let border_gap = 1;
@@ -291,13 +281,7 @@ impl Renderer {
         }
     }
 
-    fn draw_border(
-        frame: &mut [u8],
-        buf_w: i32,
-        buf_h: i32,
-        rect: Rect,
-        color: (u8, u8, u8),
-    ) {
+    fn draw_border(frame: &mut [u8], buf_w: i32, buf_h: i32, rect: Rect, color: (u8, u8, u8)) {
         let Rect(x, y, w, h) = rect;
         let thickness = 4;
         let color_alpha = [color.0, color.1, color.2, 255];
@@ -325,4 +309,3 @@ impl Renderer {
         }
     }
 }
-

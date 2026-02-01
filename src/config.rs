@@ -1,3 +1,4 @@
+use crate::view_mode::ViewMode;
 use serde::de::Deserializer;
 use serde::Deserialize;
 use std::env;
@@ -120,6 +121,7 @@ pub struct Keybindings {
     pub toggle_animation: BindingList,
     pub toggle_grid: BindingList,
     pub mark_file: BindingList,
+    pub remove_image: BindingList,
     pub mark_all: BindingList,
     pub first_image: BindingList,
     pub last_image: BindingList,
@@ -151,6 +153,7 @@ impl Default for Keybindings {
             toggle_animation: vec!["Ctrl+a"].into(),
             toggle_grid: vec!["Enter"].into(),
             mark_file: vec!["m"].into(),
+            remove_image: vec!["D"].into(),
             mark_all: vec!["M"].into(),
             first_image: vec!["g"].into(),
             last_image: vec!["G"].into(),
@@ -188,9 +191,28 @@ impl Default for Ui {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Options {
+    pub default_view: ViewMode,
     pub auto_center: bool,
-    pub pan_limit: bool,
+    pub clamp_pan: bool,
+    pub thumbnail_size: u32,
+    pub grid_pading: u32,
+    zoom_in_max: u32,
+    zoom_out_max: u32,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            default_view: ViewMode::BestFit,
+            auto_center: true,
+            clamp_pan: false,
+            thumbnail_size: 160,
+            grid_pading: 30,
+            zoom_in_max: u32::MAX,
+            zoom_out_max: 0,
+        }
+    }
 }

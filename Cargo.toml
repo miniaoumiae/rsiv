@@ -21,8 +21,8 @@ clap = { version = "4.5.56", features = ["derive"] }
 walkdir = "2.5.0"
 
 # [profile.release]
-# opt-level = 3
-## opt-level = 's'
+# opt-level = 's'
+## opt-level = 'z'
 # lto = true
 # codegen-units = 1
 # panic = 'abort'

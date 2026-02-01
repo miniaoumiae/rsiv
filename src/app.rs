@@ -11,7 +11,6 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
-pub const GRID_CELL_SIZE: u32 = 190;
 
 #[cfg(any(
     target_os = "linux",
@@ -67,10 +66,12 @@ pub struct App {
 
 impl App {
     pub fn new(images: Vec<ImageSlot>, start_in_grid_mode: bool) -> Self {
+        let config = crate::config::AppConfig::get();
+
         Self {
             images,
             current_index: 0,
-            mode: ViewMode::Absolute,
+            mode: config.options.default_view,
             off_x: 0,
             off_y: 0,
             window: None,
@@ -201,8 +202,10 @@ impl App {
             }
             Action::GridMoveUp => {
                 if let Some(w) = &self.window {
+                    let config = crate::config::AppConfig::get();
+                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
                     let width = w.inner_size().width;
-                    let cols = (width / GRID_CELL_SIZE).max(1);
+                    let cols = (width / cell_size).max(1);
                     if self.current_index >= cols as usize {
                         self.current_index -= cols as usize;
                         needs_redraw = true;
@@ -211,8 +214,10 @@ impl App {
             }
             Action::GridMoveDown => {
                 if let Some(w) = &self.window {
+                    let config = crate::config::AppConfig::get();
+                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
                     let width = w.inner_size().width;
-                    let cols = (width / GRID_CELL_SIZE).max(1);
+                    let cols = (width / cell_size).max(1);
                     if self.current_index + (cols as usize) < self.images.len() {
                         self.current_index += cols as usize;
                         needs_redraw = true;
@@ -306,6 +311,18 @@ impl App {
                         }
                         needs_redraw = true;
                     }
+                }
+            }
+            Action::RemoveImage => {
+                if !self.images.is_empty() {
+                    self.images.remove(self.current_index);
+                    if self.images.is_empty() {
+                        self.current_index = 0;
+                    } else if self.current_index >= self.images.len() {
+                        self.current_index = self.images.len() - 1;
+                    }
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
                 }
             }
             Action::ToggleMarks => {
@@ -657,8 +674,12 @@ impl ApplicationHandler<AppEvent> for App {
                             | Action::FlipHorizontal
                             | Action::FlipVertical
                             | Action::MarkFile
+                            | Action::RemoveImage
                             | Action::ToggleMarks) => {
                                 needs_redraw = self.handle_image_ops_action(a);
+                                if self.images.is_empty() {
+                                    _el.exit();
+                                }
                             }
                             a @ (Action::ToggleStatusBar
                             | Action::ToggleGrid
