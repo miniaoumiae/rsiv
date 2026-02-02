@@ -116,6 +116,18 @@ This section documents the `[options]` table of the configuration file.
 >
 > **Default:** `30`
 
+**zoom_max** = <float>
+
+> The maximum zoom level allowed (e.g., 8.0 is 800%).
+>
+> **Default:** `8.0`
+
+**zoom_min** = <float>
+
+> The minimum zoom level allowed (e.g., 0.1 is 10%).
+>
+> **Default:** `0.1`
+
 ## HANDLERS
 
 This section documents the `[handlers]` table. Handlers allow you to execute external commands using the current image path.
@@ -184,6 +196,18 @@ Modifiers are specified by adding them before the key, separated by `+`.
 > Jump to the last image.
 >
 > **Default:** `"G"`
+
+**next_mark** = <string> | [<string>]
+
+> Jump to the next marked image.
+>
+> **Default:** `"N"`
+
+**prev_mark** = <string> | [<string>]
+
+> Jump to the previous marked image.
+>
+> **Default:** `"P"`
 
 **toggle_grid** = <string> | [<string>]
 
@@ -316,6 +340,12 @@ Modifiers are specified by adding them before the key, separated by `+`.
 > Toggle marks on ALL files (invert selection).
 >
 > **Default:** `"M"`
+
+**unmark_all** = <string> | [<string>]
+
+> Remove marks from all files.
+>
+> **Default:** `"u"`
 
 **remove_image** = <string> | [<string>]
 

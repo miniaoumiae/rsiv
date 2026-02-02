@@ -133,7 +133,10 @@ impl App {
 
         match self.mode {
             ViewMode::Absolute => 1.0,
-            ViewMode::Zoom(s) => s,
+            ViewMode::Zoom(s) => {
+                let config = crate::config::AppConfig::get();
+                s.clamp(config.options.zoom_min, config.options.zoom_max)
+            }
             ViewMode::FitToWindow => {
                 let w_ratio = buf_w / item.width as f64;
                 let h_ratio = buf_h / item.height as f64;
@@ -189,6 +192,36 @@ impl App {
                     needs_redraw = true;
                 }
             }
+            Action::NextMark => {
+                if !self.images.is_empty() && !self.marked_files.is_empty() {
+                    for i in 1..self.images.len() {
+                        let idx = (self.current_index + i) % self.images.len();
+                        if let ImageSlot::Loaded(item) = &self.images[idx] {
+                            if self.marked_files.contains(&item.path) {
+                                self.current_index = idx;
+                                self.reset_view_for_new_image();
+                                needs_redraw = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            Action::PrevMark => {
+                if !self.images.is_empty() && !self.marked_files.is_empty() {
+                    for i in 1..self.images.len() {
+                        let idx = (self.current_index + self.images.len() - i) % self.images.len();
+                        if let ImageSlot::Loaded(item) = &self.images[idx] {
+                            if self.marked_files.contains(&item.path) {
+                                self.current_index = idx;
+                                self.reset_view_for_new_image();
+                                needs_redraw = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
         needs_redraw
@@ -242,6 +275,7 @@ impl App {
         let mut needs_redraw = false;
         let mut changed_scale = false;
         let step = 50;
+        let config = crate::config::AppConfig::get();
 
         match action {
             Action::ResetView => {
@@ -251,18 +285,34 @@ impl App {
             }
             Action::FitToWindow => {
                 self.mode = ViewMode::FitToWindow;
+                if config.options.auto_center {
+                    self.off_x = 0;
+                    self.off_y = 0;
+                }
                 needs_redraw = true;
             }
             Action::BestFit => {
                 self.mode = ViewMode::BestFit;
+                if config.options.auto_center {
+                    self.off_x = 0;
+                    self.off_y = 0;
+                }
                 needs_redraw = true;
             }
             Action::FitWidth => {
                 self.mode = ViewMode::FitWidth;
+                if config.options.auto_center {
+                    self.off_x = 0;
+                    self.off_y = 0;
+                }
                 needs_redraw = true;
             }
             Action::FitHeight => {
                 self.mode = ViewMode::FitHeight;
+                if config.options.auto_center {
+                    self.off_x = 0;
+                    self.off_y = 0;
+                }
                 needs_redraw = true;
             }
             Action::PanLeft => {
@@ -283,14 +333,18 @@ impl App {
             }
             Action::ZoomReset => {
                 self.mode = ViewMode::Absolute;
+                if config.options.auto_center {
+                    self.off_x = 0;
+                    self.off_y = 0;
+                }
                 needs_redraw = true;
             }
             Action::ZoomIn => {
-                self.mode = ViewMode::Zoom(old_scale * 1.1);
+                self.mode = ViewMode::Zoom((old_scale * 1.1).min(config.options.zoom_max));
                 changed_scale = true;
             }
             Action::ZoomOut => {
-                self.mode = ViewMode::Zoom(old_scale / 1.1);
+                self.mode = ViewMode::Zoom((old_scale / 1.1).max(config.options.zoom_min));
                 changed_scale = true;
             }
             _ => {}
@@ -345,6 +399,10 @@ impl App {
                         }
                     }
                 }
+                needs_redraw = true;
+            }
+            Action::UnmarkAll => {
+                self.marked_files.clear();
                 needs_redraw = true;
             }
             Action::RotateCW => {
@@ -683,7 +741,9 @@ impl ApplicationHandler<AppEvent> for App {
                             a @ (Action::NextImage
                             | Action::PrevImage
                             | Action::FirstImage
-                            | Action::LastImage) => {
+                            | Action::LastImage
+                            | Action::NextMark
+                            | Action::PrevMark) => {
                                 needs_redraw = self.handle_navigation_action(a);
                             }
                             a @ (Action::GridMoveLeft
@@ -711,6 +771,7 @@ impl ApplicationHandler<AppEvent> for App {
                             | Action::FlipHorizontal
                             | Action::FlipVertical
                             | Action::MarkFile
+                            | Action::UnmarkAll
                             | Action::RemoveImage
                             | Action::ToggleMarks) => {
                                 needs_redraw = self.handle_image_ops_action(a);
@@ -744,8 +805,18 @@ impl ApplicationHandler<AppEvent> for App {
                                     let img_w = (item.width as f64 * scale) as i32;
                                     let img_h = (item.height as f64 * scale) as i32;
 
-                                    let limit_x = (buf_w / 2) + (img_w / 2) - 10;
-                                    let limit_y = (buf_h / 2) + (img_h / 2) - 10;
+                                    let config = crate::config::AppConfig::get();
+                                    let (limit_x, limit_y) = if config.options.clamp_pan {
+                                        (
+                                            (buf_w - img_w).abs() / 2,
+                                            (buf_h - img_h).abs() / 2,
+                                        )
+                                    } else {
+                                        (
+                                            (buf_w / 2) + (img_w / 2) - 10,
+                                            (buf_h / 2) + (img_h / 2) - 10,
+                                        )
+                                    };
 
                                     self.off_x = self.off_x.max(-limit_x).min(limit_x);
                                     self.off_y = self.off_y.max(-limit_y).min(limit_y);

@@ -106,11 +106,11 @@ You can find the default keybindings there as well.
 - [ ] Command line arguments
 - [ ] Other view modes
 - [x] UI personalisation
-- [ ] Thumbnail mode
+- [x] Thumbnail mode
 - [ ] Other files options (`%f`) in the handlers
 - [ ] Script handler support (C-x)
 - [ ] Mouse support ?
-- [ ] Configurable options
+- [x] Configurable options
 - [ ] Color filter (Gamma, Brightness, ...)
 - [ ] Config hot reload ?
 - [ ] Images reload on change

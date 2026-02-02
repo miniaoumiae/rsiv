@@ -122,10 +122,13 @@ pub struct Keybindings {
     pub toggle_animation: BindingList,
     pub toggle_grid: BindingList,
     pub mark_file: BindingList,
+    pub unmark_all: BindingList,
     pub remove_image: BindingList,
     pub mark_all: BindingList,
     pub first_image: BindingList,
     pub last_image: BindingList,
+    pub next_mark: BindingList,
+    pub prev_mark: BindingList,
     pub handler_prefix: BindingList,
 }
 
@@ -155,10 +158,13 @@ impl Default for Keybindings {
             toggle_animation: vec!["Ctrl+a"].into(),
             toggle_grid: vec!["Enter"].into(),
             mark_file: vec!["m"].into(),
+            unmark_all: vec!["u"].into(),
             remove_image: vec!["D"].into(),
             mark_all: vec!["M"].into(),
             first_image: vec!["g"].into(),
             last_image: vec!["G"].into(),
+            next_mark: vec!["N"].into(),
+            prev_mark: vec!["P"].into(),
             handler_prefix: vec!["Ctrl+x"].into(),
         }
     }
@@ -202,8 +208,8 @@ pub struct Options {
     pub clamp_pan: bool,
     pub thumbnail_size: u32,
     pub grid_pading: u32,
-    zoom_in_max: u32,
-    zoom_out_max: u32,
+    pub zoom_max: f64,
+    pub zoom_min: f64,
 }
 
 impl Default for Options {
@@ -214,8 +220,8 @@ impl Default for Options {
             clamp_pan: false,
             thumbnail_size: 160,
             grid_pading: 30,
-            zoom_in_max: u32::MAX,
-            zoom_out_max: 0,
+            zoom_max: 8.0,
+            zoom_min: 0.1,
         }
     }
 }

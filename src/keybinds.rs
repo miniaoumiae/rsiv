@@ -15,6 +15,8 @@ pub enum Action {
     // Navigation (Global or View)
     NextImage,
     PrevImage,
+    NextMark,
+    PrevMark,
     FirstImage,
     LastImage,
 
@@ -47,6 +49,7 @@ pub enum Action {
     ToggleStatusBar,
     ToggleAnimation,
     ToggleMarks,
+    UnmarkAll,
     MarkFile,
     RemoveImage,
     ScriptHandlerPrefix,
@@ -134,6 +137,18 @@ impl Binding {
             BindingMode::Global,
             Action::PrevImage,
         );
+        add(
+            &mut bindings,
+            &k.next_mark.0,
+            BindingMode::Global,
+            Action::NextMark,
+        );
+        add(
+            &mut bindings,
+            &k.prev_mark.0,
+            BindingMode::Global,
+            Action::PrevMark,
+        );
 
         add(
             &mut bindings,
@@ -146,6 +161,12 @@ impl Binding {
             &k.mark_file.0,
             BindingMode::Global,
             Action::MarkFile,
+        );
+        add(
+            &mut bindings,
+            &k.unmark_all.0,
+            BindingMode::Global,
+            Action::UnmarkAll,
         );
         add(
             &mut bindings,
