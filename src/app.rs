@@ -324,6 +324,9 @@ impl App {
             }
             Action::RemoveImage => {
                 if !self.images.is_empty() {
+                    if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
+                        self.marked_files.remove(&item.path);
+                    }
                     self.images.remove(self.current_index);
                     if self.images.is_empty() {
                         self.current_index = 0;

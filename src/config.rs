@@ -209,7 +209,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            default_view: ViewMode::BestFit,
+            default_view: ViewMode::FitToWindow,
             auto_center: true,
             clamp_pan: false,
             thumbnail_size: 160,

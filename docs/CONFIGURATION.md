@@ -1,0 +1,328 @@
+# rsiv Configuration
+
+## NAME
+
+**rsiv** - TOML configuration file format.
+
+## SYNTAX
+
+rsiv's configuration file uses the **TOML** format. The format's specification can be found at [https://toml.io/en/v1.0.0](https://toml.io/en/v1.0.0).
+
+## LOCATION
+
+rsiv looks for a configuration file in the following locations on UNIX/Linux systems:
+
+1. `$XDG_CONFIG_HOME/rsiv/config.toml`
+2. `$HOME/.config/rsiv/config.toml`
+
+If no file is found, internal defaults are used.
+
+## UI
+
+This section documents the `[ui]` table of the configuration file.
+
+**bg_color** = "<string>"
+
+> The background color of the main canvas (behind the image).
+>
+> **Default:** `"#000000"`
+
+**status_bar_bg** = "<string>"
+
+> The background color of the bottom status bar.
+>
+> **Default:** `"#303030"`
+
+**status_bar_fg** = "<string>"
+
+> The text color of the status bar.
+>
+> **Default:** `"#FFFFFF"`
+
+**font_family** = "<string>"
+
+> The font family used for text in the status bar.
+>
+> **Default:** `"monospace"`
+
+**font_size** = <integer>
+
+> The font size in points.
+>
+> **Default:** `13`
+
+**thumbnail_border_color** = "<string>"
+
+> The color of the border surrounding the currently selected image in Grid/Thumbnail mode.
+>
+> **Default:** `"#FFFFFF"`
+
+**mark_color** = "<string>"
+
+> The color of the indicator tag for files that have been "marked" (selected).
+>
+> **Default:** `"#FF0000"`
+
+**loading_color** = "<string>"
+
+> The placeholder color used while an image is being decoded in the background.
+>
+> **Default:** `"#3c3c3c"`
+
+**error_color** = "<string>"
+
+> The placeholder color used if an image fails to load.
+>
+> **Default:** `"#FF0000"`
+
+## OPTIONS
+
+This section documents the `[options]` table of the configuration file.
+
+**default_view** = "FitToWindow" | "BestFit" | "FitWidth" | "FitHeight" | "Absolute" | { Zoom = <float> }
+
+> Defines the initial scale mode when opening an image.
+>
+> - `FitToWindow`: Scales the image to fill the available space (may upscale).
+> - `BestFit`: Scales the image to fit, but will not upscale images smaller than the window.
+> - `FitWidth`: Fits the image to the window width.
+> - `FitHeight`: Fits the image to the window height.
+> - `Absolute`: Displays the image at 100% scale (1:1 pixel mapping).
+> - `{ Zoom = 2.0 }`: Displays the image at a specific magnification factor (e.g., 2.0 is 200%).
+>
+> **Default:** `"BestFit"`
+
+**auto_center** = true | false
+
+> When true, images are automatically centered on the screen when the scale mode is changed or reset.
+>
+> **Default:** `true`
+
+**clamp_pan** = true | false
+
+> When true, restricts panning so that the image cannot be moved off-screen.
+>
+> **Default:** `false`
+
+**thumbnail_size** = <integer>
+
+> The maximum width/height (in pixels) of thumbnails generated in Grid mode.
+>
+> **Default:** `160`
+
+**grid_pading** = <integer>
+
+> The padding (gap) in pixels between thumbnail cells in Grid mode.
+>
+> **Default:** `30`
+
+## HANDLERS
+
+This section documents the `[handlers]` table. Handlers allow you to execute external commands using the current image path.
+
+To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), followed by the key defined below.
+
+**"<key>"** = ["<command>", "<arg>", ...]
+
+> The key matches a single character input. The value is an array representing the command to run.
+> The special string `%f` will be replaced by the absolute path of the image file.
+
+**Example:**
+
+```toml
+[handlers]
+# Press Ctrl+x then g to open in GIMP
+"g" = ["gimp", "%f"]
+# Press Ctrl+x then w to set wallpaper
+"w" = ["swww", "img", "%f"]
+```
+
+## KEYBINDINGS
+
+This section documents the `[keybindings]` table.
+
+Bindings can be a simple string (`"q"`) or an array of strings (`["q", "Esc"]`) to assign multiple keys to one action.
+
+**Modifiers:**
+Modifiers are specified by adding them before the key, separated by `+`.
+
+- `Ctrl` / `Control`
+- `Shift`
+- `Alt`
+- `Super` / `Meta`
+
+**Example:** `"Ctrl+Shift+f"`
+
+### Navigation & General
+
+**quit** = <string> | [<string>]
+
+> Quit the application.
+>
+> **Default:** `"q"`
+
+**image_next** = <string> | [<string>]
+
+> Go to the next image.
+>
+> **Default:** `"n"`
+
+**image_previous** = <string> | [<string>]
+
+> Go to the previous image.
+>
+> **Default:** `"p"`
+
+**first_image** = <string> | [<string>]
+
+> Jump to the first image.
+>
+> **Default:** `"g"`
+
+**last_image** = <string> | [<string>]
+
+> Jump to the last image.
+>
+> **Default:** `"G"`
+
+**toggle_grid** = <string> | [<string>]
+
+> Switch between Image View and Thumbnail/Grid View.
+>
+> **Default:** `"Enter"`
+
+**handler_prefix** = <string> | [<string>]
+
+> The prefix key to enter "Handler Mode".
+>
+> **Default:** `"Ctrl+x"`
+
+### View Manipulation
+
+**zoom_in** = <string> | [<string>]
+
+> Zoom in by 10%.
+>
+> **Default:** `"+"`
+
+**zoom_out** = <string> | [<string>]
+
+> Zoom out by 10%.
+>
+> **Default:** `"-"`
+
+**zoom_reset** = <string> | [<string>]
+
+> Reset zoom to 100% (Absolute).
+>
+> **Default:** `"="`
+
+**fit_best** = <string> | [<string>]
+
+> Set mode to Fit To Window (scales up to fill).
+>
+> **Default:** `"f"`
+
+**fit_best_no_upscale** = <string> | [<string>]
+
+> Set mode to Best Fit (scales down to fit, never upscales).
+>
+> **Default:** `"F"`
+
+**fit_width** = <string> | [<string>]
+
+> Fit image to window width.
+>
+> **Default:** `"W"`
+
+**fit_height** = <string> | [<string>]
+
+> Fit image to window height.
+>
+> **Default:** `"H"`
+
+**rotate_cw** = <string> | [<string>]
+
+> Rotate image 90 degrees clockwise.
+>
+> **Default:** `">"`
+
+**rotate_ccw** = <string> | [<string>]
+
+> Rotate image 90 degrees counter-clockwise.
+>
+> **Default:** `"<"`
+
+**image_flip_horizontal** = <string> | [<string>]
+
+> Flip image horizontally.
+>
+> **Default:** `"_"`
+
+**image_flip_vertical** = <string> | [<string>]
+
+> Flip image vertically.
+>
+> **Default:** `"?"`
+
+### Panning & Movement
+
+**view_pan_left** = <string> | [<string>]
+
+> Pan view left (or move cursor left in Grid).
+>
+> **Default:** `["h", "Left"]`
+
+**view_pan_down** = <string> | [<string>]
+
+> Pan view down (or move cursor down in Grid).
+>
+> **Default:** `["j", "Down"]`
+
+**view_pan_up** = <string> | [<string>]
+
+> Pan view up (or move cursor up in Grid).
+>
+> **Default:** `["k", "Up"]`
+
+**view_pan_right** = <string> | [<string>]
+
+> Pan view right (or move cursor right in Grid).
+>
+> **Default:** `["l", "Right"]`
+
+### Toggles & Actions
+
+**toggle_status_bar** = <string> | [<string>]
+
+> Show/Hide the status bar.
+>
+> **Default:** `"b"`
+
+**toggle_animation** = <string> | [<string>]
+
+> Play/Pause GIF animations.
+>
+> **Default:** `"Ctrl+a"`
+
+**mark_file** = <string> | [<string>]
+
+> Toggle the "mark" on the current file.
+>
+> **Default:** `"m"`
+
+**mark_all** = <string> | [<string>]
+
+> Toggle marks on ALL files (invert selection).
+>
+> **Default:** `"M"`
+
+**remove_image** = <string> | [<string>]
+
+> Remove the current image from the view.
+>
+> **Default:** `"D"`
+
+## CREDITS & INSPIRATION
+
+The format and style of this configuration documentation is heavily inspired by the excellent documentation of [Alacritty](https://alacritty.org/config-alacritty.html).

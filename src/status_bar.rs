@@ -125,7 +125,7 @@ impl StatusBar {
             InputMode::Normal => path.to_string(),
             InputMode::WaitingForHandler => "[Handler] Press key... (Esc to cancel)".to_string(),
             InputMode::AwaitingTarget(_) => {
-                "[Target] (c)urrent or (m)arked? (Esc to cancel)".to_string()
+                "[Target] (c)urrent/(m)arked? (Esc to cancel)".to_string()
             }
         };
 
