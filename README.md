@@ -112,6 +112,7 @@ You can find the default keybindings there as well.
 - [ ] Mouse support ?
 - [x] Configurable options
 - [ ] Color filter (Gamma, Brightness, ...)
+- [ ] Numeric prefix like `10n`
 - [ ] Config hot reload ?
 - [ ] Images reload on change
 - [ ] Memory usage optimization (`[options]`)

@@ -512,7 +512,7 @@ impl App {
         let bg_color = crate::utils::parse_color(&config.ui.bg_color);
 
         // Clear Background
-        crate::renderer::Renderer::clear(frame_slice, bg_color);
+        crate::renderer::clear(frame_slice, bg_color);
 
         let (buf_w, buf_h) = if let Some(w) = &self.window {
             let s = w.inner_size();
@@ -537,7 +537,7 @@ impl App {
                 error: crate::utils::parse_color(&config.ui.error_color),
             };
 
-            crate::renderer::Renderer::draw_grid(
+            crate::renderer::draw_grid(
                 frame_slice,
                 buf_w,
                 available_h,
@@ -556,7 +556,7 @@ impl App {
                     off_x: self.off_x,
                     off_y: self.off_y,
                 };
-                crate::renderer::Renderer::draw_image(frame_slice, buf_w, available_h, &params);
+                crate::renderer::draw_image(frame_slice, buf_w, available_h, &params);
             }
         }
 
@@ -807,10 +807,7 @@ impl ApplicationHandler<AppEvent> for App {
 
                                     let config = crate::config::AppConfig::get();
                                     let (limit_x, limit_y) = if config.options.clamp_pan {
-                                        (
-                                            (buf_w - img_w).abs() / 2,
-                                            (buf_h - img_h).abs() / 2,
-                                        )
+                                        ((buf_w - img_w).abs() / 2, (buf_h - img_h).abs() / 2)
                                     } else {
                                         (
                                             (buf_w / 2) + (img_w / 2) - 10,

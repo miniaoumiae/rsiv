@@ -12,12 +12,10 @@ impl App {
 
         let paths: Vec<String> = if on_marked {
             self.marked_files.iter().cloned().collect()
+        } else if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
+            vec![item.path.clone()]
         } else {
-            if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                vec![item.path.clone()]
-            } else {
-                vec![]
-            }
+            vec![]
         };
 
         for path_str in paths {
@@ -50,7 +48,7 @@ impl App {
         if !path_buf.exists() {
             self.images.retain(|slot| {
                 if let ImageSlot::Loaded(item) = slot {
-                    &item.path != path
+                    item.path != path
                 } else {
                     true
                 }
