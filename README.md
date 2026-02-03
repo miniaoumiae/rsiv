@@ -9,9 +9,9 @@
 
 - **Thumbnail Mode**: A grid-based view to browse directories.
 - **Format Support**: Static images, animated **GIFs**, and **SVGs**.
-- **Script Handlers**: Execute external commands on images (similar to `nsxiv`'s key-handler).
+- **Script Handlers**: Execute external commands on images.
 - **Configuration**: Fully customizable keybindings and UI in toml.
-- **Fast Rendering**: Uses `pixels` for a software-rendered frame buffer, allowing for precise, low-level control over the display.
+- **Fast Rendering**: Uses `pixels` (WebGPU) for a software-rendered frame buffer.
 
 ## Key differences from `nsxiv`
 
