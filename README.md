@@ -112,12 +112,12 @@ You can find the default keybindings there as well.
 - [x] Basic status bar
 - [x] SVG support
 - [x] Keybinds personalisation
-- [ ] Command line arguments
+- [x] Command line arguments
 - [ ] Other view modes
 - [x] UI personalisation
 - [x] Thumbnail mode
-- [ ] Other files options (`%f`) in the handlers
-- [ ] Script handler support (C-x)
+- [ ] Other files options (`%f`) in the handlers ?
+- [x] Script handler support (C-x)
 - [ ] Mouse support ?
 - [x] Configurable options
 - [ ] Color filter (Gamma, Brightness, ...)
