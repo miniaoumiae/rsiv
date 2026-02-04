@@ -15,6 +15,11 @@ pub struct StatusBar {
     background_color: (u8, u8, u8),
     left_buffer: Buffer,
     right_buffer: Buffer,
+
+    // Caching for path truncation
+    cached_raw_path: String,
+    cached_max_width: u32,
+    cached_display_text: String,
 }
 
 impl StatusBar {
@@ -49,6 +54,9 @@ impl StatusBar {
             background_color: utils::parse_color(&config.ui.status_bar_bg),
             left_buffer,
             right_buffer,
+            cached_raw_path: String::new(),
+            cached_max_width: 0,
+            cached_display_text: String::new(),
         }
     }
 
@@ -72,6 +80,9 @@ impl StatusBar {
             .set_size(&mut font_system, None, Some(self.height as f32));
         self.right_buffer
             .set_size(&mut font_system, None, Some(self.height as f32));
+
+        // Invalidate cache
+        self.cached_max_width = 0;
     }
 
     pub fn draw(
@@ -121,7 +132,7 @@ impl StatusBar {
         let margin_px = (config.ui.font_size as u32 * 5).max(50);
         let max_path_w = (right_x - 5 - margin_px as i32).max(0) as u32;
 
-        let display_text = match input_mode {
+        let raw_text_to_show = match input_mode {
             InputMode::Normal => path.to_string(),
             InputMode::WaitingForHandler => "[Handler] Press key... (Esc to cancel)".to_string(),
             InputMode::AwaitingTarget(_) => {
@@ -129,52 +140,68 @@ impl StatusBar {
             }
         };
 
+        // Cache Check
+        let needs_recalc =
+            raw_text_to_show != self.cached_raw_path || max_path_w != self.cached_max_width;
+
+        if needs_recalc {
+            self.cached_raw_path = raw_text_to_show.clone();
+            self.cached_max_width = max_path_w;
+
+            self.left_buffer.set_text(
+                &mut font_system,
+                &raw_text_to_show,
+                &attrs,
+                Shaping::Advanced,
+                None,
+            );
+            self.left_buffer.shape_until_scroll(&mut font_system, false);
+
+            // Binary Search Truncation (Expensive)
+            if Self::measure_width(&self.left_buffer) > max_path_w as f32 {
+                let full_path_chars: Vec<char> = raw_text_to_show.chars().collect();
+                let n = full_path_chars.len();
+
+                let mut low = 0;
+                let mut high = n;
+                let mut best_str = String::from("…");
+
+                while low <= high {
+                    let mid = (low + high) / 2;
+                    let suffix: String = full_path_chars[mid..].iter().collect();
+                    let test_str = format!("…{}", suffix);
+
+                    self.left_buffer.set_text(
+                        &mut font_system,
+                        &test_str,
+                        &attrs,
+                        Shaping::Advanced,
+                        None,
+                    );
+                    self.left_buffer.shape_until_scroll(&mut font_system, false);
+
+                    if Self::measure_width(&self.left_buffer) <= max_path_w as f32 {
+                        best_str = test_str;
+                        high = mid.saturating_sub(1);
+                    } else {
+                        low = mid + 1;
+                    }
+                }
+                self.cached_display_text = best_str;
+            } else {
+                self.cached_display_text = raw_text_to_show;
+            }
+        }
+
+        // Always set text from cache to ensure buffer is ready for drawing
         self.left_buffer.set_text(
             &mut font_system,
-            &display_text,
+            &self.cached_display_text,
             &attrs,
             Shaping::Advanced,
             None,
         );
         self.left_buffer.shape_until_scroll(&mut font_system, false);
-
-        // Binary Search Truncation
-        if Self::measure_width(&self.left_buffer) > max_path_w as f32 {
-            let full_path_chars: Vec<char> = path.chars().collect();
-            let n = full_path_chars.len();
-
-            let mut low = 0;
-            let mut high = n;
-            let mut best_str = String::from("…");
-
-            while low <= high {
-                let mid = (low + high) / 2;
-                // Create suffix from mid to end
-                let suffix: String = full_path_chars[mid..].iter().collect();
-                let test_str = format!("…{}", suffix);
-
-                self.left_buffer.set_text(
-                    &mut font_system,
-                    &test_str,
-                    &attrs,
-                    Shaping::Advanced,
-                    None,
-                );
-                self.left_buffer.shape_until_scroll(&mut font_system, false);
-
-                if Self::measure_width(&self.left_buffer) <= max_path_w as f32 {
-                    best_str = test_str;
-                    high = mid.saturating_sub(1); // Try to include more chars (move left)
-                } else {
-                    low = mid + 1; // Need to exclude more chars (move right)
-                }
-            }
-
-            // Final update with the best fitting string found
-            self.left_buffer
-                .set_text(&mut font_system, &best_str, &attrs, Shaping::Advanced, None);
-            self.left_buffer.shape_until_scroll(&mut font_system, false);
-        }
 
         // Draw Full-width Background Bar
         target.draw_rect(0, bar_top, width, self.height, self.background_color);

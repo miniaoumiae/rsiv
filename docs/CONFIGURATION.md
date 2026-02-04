@@ -128,6 +128,18 @@ This section documents the `[options]` table of the configuration file.
 >
 > **Default:** `0.1`
 
+**image_cache_size** = <integer>
+
+> The maximum number of full-resolution images to keep in memory (LRU cache).
+>
+> **Default:** `8`
+
+**thumb_cache_size** = <integer>
+
+> The maximum number of thumbnails to keep in memory (LRU cache).
+>
+> **Default:** `200`
+
 ## HANDLERS
 
 This section documents the `[handlers]` table. Handlers allow you to execute external commands using the current image path.

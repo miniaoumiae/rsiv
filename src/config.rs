@@ -210,6 +210,8 @@ pub struct Options {
     pub grid_pading: u32,
     pub zoom_max: f64,
     pub zoom_min: f64,
+    pub image_cache_size: usize,
+    pub thumb_cache_size: usize,
 }
 
 impl Default for Options {
@@ -222,6 +224,8 @@ impl Default for Options {
             grid_pading: 30,
             zoom_max: 8.0,
             zoom_min: 0.1,
+            image_cache_size: 8,
+            thumb_cache_size: 200,
         }
     }
 }
