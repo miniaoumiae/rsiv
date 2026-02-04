@@ -5,12 +5,13 @@
 > [!WARNING]
 > This project is currently a heavy work in progress.
 >
-> - No memory limiting mechanism is implemented yet. Opening directories with a large volume of images may exceed available RAM and cause a crash.
 > - While `rsiv` mirrors most `nsxiv` keybindings, but some are no impemented of differant. You can see [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for details.
 
 ## Features
 
 - **Thumbnail Mode**: A grid-based view to browse directories.
+- **Memory Efficient**: Uses memmap2 for zero-copy I/O and an LRU cache for decoded pixels.
+- **Async Pipeline**: Prioritized background workers ensure the UI stays at 60 FPS while thumbnails load.
 - **Format Support**: Static images, animated **GIFs**, and **SVGs**.
 - **Script Handlers**: Execute external commands on images.
 - **Configuration**: Fully customizable keybindings and UI in toml.
