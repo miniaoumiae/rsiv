@@ -37,11 +37,6 @@ impl CacheManager {
         self.thumb_cache.put(path, thumb);
     }
 
-    pub fn clear(&mut self) {
-        self.image_cache.clear();
-        self.thumb_cache.clear();
-    }
-
     pub fn remove(&mut self, path: &PathBuf) {
         self.image_cache.pop(path);
         self.thumb_cache.pop(path);

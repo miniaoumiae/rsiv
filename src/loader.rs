@@ -16,10 +16,9 @@ use tiny_skia::Pixmap;
 use walkdir::WalkDir;
 use winit::event_loop::EventLoopProxy;
 
-// --- Discovery ---
+// Discovery
 
 pub fn identify_format(path: &Path) -> Result<ImageFormat, String> {
-    // 1. Try magic bytes first (fastest)
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 1024];
     let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
@@ -145,7 +144,7 @@ impl Loader {
         let (urgent_tx, urgent_rx) = unbounded();
         let background_stack = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
 
-        // Spawn multiple workers (e.g., based on CPU count)
+        // Spawn multiple workers based on CPU count
         let num_workers = (num_cpus::get() / 2).max(1);
         for _ in 0..num_workers {
             let u_rx = urgent_rx.clone();
@@ -171,7 +170,7 @@ impl Loader {
         // LIFO: Push to the front so the newest scroll target is handled first
         stack.push_front(LoadRequest::LoadThumbnail(path, format, size));
 
-        // Optional: If the stack gets too huge (e.g. > 200), drop the oldest requests
+        // If the stack gets too huge (e.g. > 200), drop the oldest requests
         // Removing from the back drops the oldest (least priority) items
         if stack.len() > 200 {
             stack.pop_back();
@@ -187,29 +186,31 @@ fn worker_loop(
     proxy: EventLoopProxy<AppEvent>,
 ) {
     loop {
-        // Priority 1: Check urgent requests immediately (non-blocking)
+        // Try to get an URGENT task
         if let Ok(req) = urgent_rx.try_recv() {
             process_request(req, &proxy);
-            continue;
+            continue; // Go back to top to check for more urgent tasks
         }
 
-        // Priority 2: Wait briefly for urgent requests
-        // We use a short timeout because we cannot select on both a Channel and a Condvar.
-        match urgent_rx.recv_timeout(Duration::from_millis(10)) {
-            Ok(req) => process_request(req, &proxy),
-            Err(_) => {
-                // Priority 3: If no urgent tasks, process background stack (LIFO)
-                let (lock, cvar) = &*background_stack;
-                let mut stack = lock.lock().unwrap();
-                
-                if let Some(req) = stack.pop_front() {
-                    drop(stack); // Release lock before processing
-                    process_request(req, &proxy);
-                } else {
-                    // Priority 4: Wait for new background tasks (or timeout to check urgent again)
-                    let _ = cvar.wait_timeout(stack, Duration::from_millis(50)).unwrap();
-                }
+        // No urgent task? Check the BACKGROUND stack
+        let req = {
+            let (lock, cvar) = &*background_stack;
+            let mut stack = lock.lock().unwrap();
+
+            if stack.is_empty() {
+                // If stack is empty, wait for a signal OR a short timeout
+                // (the timeout allows us to go back to the top and check urgent_rx)
+                let _ = cvar
+                    .wait_timeout(stack, Duration::from_millis(100))
+                    .unwrap();
+                None
+            } else {
+                stack.pop_front()
             }
+        };
+
+        if let Some(r) = req {
+            process_request(r, &proxy);
         }
     }
 }
@@ -265,7 +266,7 @@ fn load_thumbnail(
             .with_guessed_format()
             .map_err(|e| e.to_string())?;
 
-        // Safety limits same as full load
+        // Safety limits
         let mut limits = image::Limits::default();
         limits.max_image_width = Some(32768);
         limits.max_image_height = Some(32768);

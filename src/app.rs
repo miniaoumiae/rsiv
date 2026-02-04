@@ -188,29 +188,67 @@ impl App {
             return false;
         };
 
-        // Get the pixels from cache
         if let Some(arc_image) = self.cache.image_cache.get(&item.path) {
-            // Clone the Arc so we can mutate the inner data (Copy-on-Write)
-            let mut loaded_image = (**arc_image).clone();
+            // Use Copy-on-Write to avoid cloning if we are the sole owner
+            let mut loaded_image = arc_image.clone();
 
-            // Apply the transformation
-            let dimensions_changed = f(&mut loaded_image);
+            // `make_mut` checks reference count. If 1, it returns mutable reference.
+            // If > 1, it clones the data and returns mutable reference to new data.
+            let inner = Arc::make_mut(&mut loaded_image);
 
-            // If rotation happened, update the metadata dimensions
+            let dimensions_changed = f(inner);
+
             if dimensions_changed {
-                item.width = loaded_image.width;
-                item.height = loaded_image.height;
+                item.width = inner.width;
+                item.height = inner.height;
             }
 
-            // Update the Cache with new pixels
             let path = item.path.clone();
-            self.cache
-                .insert_image(path.clone(), Arc::new(loaded_image));
-
-            // IMPORTANT: Invalidate the thumbnail so it gets re-generated correctly
+            self.cache.insert_image(path.clone(), loaded_image); // Insert the Arc
             self.cache.thumb_cache.pop(&path);
 
             return true;
+        }
+        false
+    }
+
+    fn is_path_visible(&self, path: &PathBuf) -> bool {
+        if !self.grid_mode {
+            if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                return &item.path == path;
+            }
+            return false;
+        }
+
+        // Check if path is in visible grid range
+        if let Some(w) = &self.window {
+            let config = crate::config::AppConfig::get();
+            let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+            let buf_w = w.inner_size().width;
+            let buf_h = w.inner_size().height;
+            let cols = (buf_w / cell_size).max(1);
+
+            let current_row = (self.current_index as u32) / cols;
+            let scroll_y = if current_row * cell_size > buf_h / 2 {
+                (current_row * cell_size) as i32 - (buf_h as i32 / 2) + (cell_size as i32 / 2)
+            } else {
+                0
+            };
+
+            let start_row = scroll_y.max(0) as u32 / cell_size;
+            let rows_visible = (buf_h / cell_size) + 2;
+
+            let start_idx = (start_row * cols) as usize;
+            let end_idx = ((start_row + rows_visible) * cols) as usize;
+            let end_idx = end_idx.min(self.images.len());
+
+            for i in start_idx..end_idx {
+                if let ImageSlot::MetadataLoaded(item) = &self.images[i] {
+                    if &item.path == path {
+                        return true;
+                    }
+                }
+            }
         }
         false
     }
@@ -531,7 +569,7 @@ impl App {
             return;
         }
 
-        // --- 1. Request Logic (Pull Architecture) ---
+        // Request Logic
         if self.grid_mode {
             if let Some(w) = &self.window {
                 let config = crate::config::AppConfig::get();
@@ -539,13 +577,6 @@ impl App {
                 let buf_w = w.inner_size().width;
                 let buf_h = w.inner_size().height; // Approximate
                 let cols = (buf_w / cell_size).max(1);
-
-                // Calculate visible rows
-                // We need to know the scroll_y which is computed in draw_grid based on current_index
-                // For now, let's replicate the logic or approximate it.
-                // In draw_grid:
-                // let current_row = (selected_idx as u32) / cols;
-                // let scroll_y = if current_row * cell_size > buf_h as u32 / 2 { ... }
 
                 let current_row = (self.current_index as u32) / cols;
                 let scroll_y = if current_row * cell_size > buf_h / 2 {
@@ -687,22 +718,17 @@ impl App {
                 &colors,
                 &self.marked_files,
             );
-        } else {
-            if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                // Check if loaded
-                if let Some(loaded_image) = self.cache.get_image(&item.path) {
-                    let params = crate::renderer::DrawImageParams {
-                        image: &loaded_image,
-                        frame_idx: self.current_frame_index,
-                        scale,
-                        off_x: self.off_x,
-                        off_y: self.off_y,
-                    };
-                    crate::renderer::draw_image(frame_slice, buf_w, available_h, &params);
-                } else {
-                    // Draw Loading Text (using Status Bar renderer or simple center text?)
-                    // For now, we rely on Status Bar "Loading..."
-                }
+        } else if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+            // Check if loaded
+            if let Some(loaded_image) = self.cache.get_image(&item.path) {
+                let params = crate::renderer::DrawImageParams {
+                    image: &loaded_image,
+                    frame_idx: self.current_frame_index,
+                    scale,
+                    off_x: self.off_x,
+                    off_y: self.off_y,
+                };
+                crate::renderer::draw_image(frame_slice, buf_w, available_h, &params);
             }
         }
 
@@ -841,8 +867,8 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::ThumbnailLoaded(path, thumb) => {
                 self.pending.remove(&path);
-                self.cache.insert_thumbnail(path, thumb);
-                if self.grid_mode {
+                self.cache.insert_thumbnail(path.clone(), thumb);
+                if self.grid_mode && self.is_path_visible(&path) {
                     self.window.as_ref().unwrap().request_redraw();
                 }
             }
@@ -971,4 +997,3 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 }
-

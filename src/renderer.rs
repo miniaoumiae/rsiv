@@ -156,7 +156,7 @@ pub fn draw_grid(
 
     clear(frame, colors.bg);
 
-    // 1. GATHER: Collect all draw commands sequentially (satisfies LRU mutability)
+    // GATHER: Collect all draw commands sequentially (satisfies LRU mutability)
     let draw_commands: Vec<_> = images
         .iter()
         .enumerate()
@@ -171,10 +171,6 @@ pub fn draw_grid(
                 return None;
             }
 
-            let p_size = thumb_size as i32;
-            let t_x = x_cell + (thumb_size as i32 - p_size) / 2;
-            let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
-
             let is_selected = i == selected_idx;
 
             // Check cache (mut access here is safe because we are single-threaded in this phase)
@@ -182,17 +178,23 @@ pub fn draw_grid(
                 let is_marked = marked_paths.contains(&item.path.to_string_lossy().to_string());
                 let thumb_data = cache.get_thumbnail(&item.path);
 
-                // Calculate the exact drawing bounds for this command to help filtering later.
-                // The drawing area includes the thumbnail/placeholder + border + mark.
-                // A safe bounding box is the cell area.
-                // Specifically: y_cell to y_cell + cell_size (approx).
-                // Or more precisely: t_y - offset to t_y + height + offset.
-                // We'll stick to the core visual elements: t_y is the top.
-                // Let's store y_min and y_max for the command.
+                // Calculate correct aspect ratio for the placeholder box even if not loaded
+                let (p_w, p_h) = {
+                    let aspect = item.width as f64 / item.height as f64;
+                    if aspect >= 1.0 {
+                        (thumb_size, (thumb_size as f64 / aspect) as u32)
+                    } else {
+                        ((thumb_size as f64 * aspect) as u32, thumb_size)
+                    }
+                };
+                let p_w = p_w as i32;
+                let p_h = p_h as i32;
 
-                // Max height of visual element is thumb_size + padding basically.
-                let y_min = t_y - 10; // Extra buffer for borders/selection
-                let y_max = t_y + p_size + 10;
+                let t_x = x_cell + (thumb_size as i32 - p_w) / 2;
+                let t_y = y_cell + (thumb_size as i32 - p_h) / 2;
+
+                let y_min = t_y - 10;
+                let y_max = t_y + p_h + 10;
 
                 Some((
                     y_min,
@@ -207,7 +209,10 @@ pub fn draw_grid(
                     ImageSlot::MetadataLoaded(item.clone()),
                 ))
             } else {
-                // For loading/error slots
+                // For pending/error slots
+                let p_size = thumb_size as i32;
+                let t_x = x_cell + (thumb_size as i32 - p_size) / 2;
+                let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
                 let y_min = t_y - 10;
                 let y_max = t_y + p_size + 10;
                 Some((
@@ -226,8 +231,8 @@ pub fn draw_grid(
         })
         .collect();
 
-    // DRAW: Execute commands in parallel (read-only access to Arc data)
-    let p_size = thumb_size as i32;
+    // DRAW: Execute commands in parallel
+    let thumb_size_i32 = thumb_size as i32;
 
     frame
         .par_chunks_exact_mut((buf_w * 4) as usize)
@@ -235,14 +240,9 @@ pub fn draw_grid(
         .for_each(|(y, row_pixels)| {
             let y = y as i32;
 
-            // Optimization: Filter commands that intersect this row y
-            // We iterate only commands where y is within [cmd.y_min, cmd.y_max]
-            // Since draw_commands is relatively small (< 100 items usually), linear filter is fast enough
-            // compared to drawing pixels.
-
             for (
-                _y_min,
-                _y_max,
+                _ymin,
+                _ymax,
                 x_cell,
                 y_cell,
                 base_t_x,
@@ -255,30 +255,24 @@ pub fn draw_grid(
                 .iter()
                 .filter(|(ymin, ymax, ..)| y >= *ymin && y < *ymax)
             {
-                // Draw Thumbnail Pixels
+                // --- 1. Draw Thumbnail Pixels ---
                 if let Some(data) = thumb_data {
                     let (t_w, t_h, pixels) = &**data;
                     let t_w = *t_w as i32;
                     let t_h = *t_h as i32;
 
-                    // Re-calculate specific centered position for this thumb
-                    let t_x = x_cell + (thumb_size as i32 - t_w) / 2;
-                    let t_y = y_cell + (thumb_size as i32 - t_h) / 2;
+                    let t_x = x_cell + (thumb_size_i32 - t_w) / 2;
+                    let t_y = y_cell + (thumb_size_i32 - t_h) / 2;
 
-                    // Does this row intersect the thumbnail image?
                     if y >= t_y && y < t_y + t_h {
-                        let row_idx = y - t_y; // 0..t_h
+                        let row_idx = y - t_y;
                         let src_row_start = (row_idx * t_w) as usize * 4;
-
-                        // Bounds check x
                         let dest_x_start = t_x.max(0);
                         let dest_x_end = (t_x + t_w).min(buf_w);
 
                         if dest_x_end > dest_x_start {
-                            // Offset into the source buffer
                             let src_offset_x = (dest_x_start - t_x) as usize * 4;
                             let copy_len = (dest_x_end - dest_x_start) as usize * 4;
-
                             let dest_row_start = (dest_x_start as usize) * 4;
 
                             if src_row_start + src_offset_x + copy_len <= pixels.len()
@@ -297,7 +291,6 @@ pub fn draw_grid(
                                     if src_a == 255 {
                                         dest_chunk.copy_from_slice(src_chunk);
                                     } else if src_a > 0 {
-                                        // Blend
                                         let inv_a = 255 - src_a;
                                         dest_chunk[0] = ((src_chunk[0] as u32 * src_a
                                             + dest_chunk[0] as u32 * inv_a)
@@ -318,16 +311,30 @@ pub fn draw_grid(
                         }
                     }
                 } else {
-                    // Draw placeholder (Loading/Error)
+                    // Draw placeholder
                     let color = match slot {
                         ImageSlot::Error(_) => colors.error,
                         _ => colors.loading,
                     };
+
+                    // We use the coordinates calculated in gather step (base_t_x/y which are already centered)
+                    // If it's MetadataLoaded, it's aspect-correct. If Pending, it's square.
+                    let (p_w, p_h) = if let ImageSlot::MetadataLoaded(m) = slot {
+                        let aspect = m.width as f64 / m.height as f64;
+                        if aspect >= 1.0 {
+                            (thumb_size_i32, (thumb_size as f64 / aspect) as i32)
+                        } else {
+                            ((thumb_size as f64 * aspect) as i32, thumb_size_i32)
+                        }
+                    } else {
+                        (thumb_size_i32, thumb_size_i32)
+                    };
+
                     draw_border_scanline(
                         row_pixels,
                         y,
                         buf_w,
-                        Rect(*base_t_x, *base_t_y, p_size, p_size),
+                        Rect(*base_t_x, *base_t_y, p_w, p_h),
                         color,
                     );
                 }
@@ -340,11 +347,19 @@ pub fn draw_grid(
 
                     let (target_w, target_h, target_x, target_y) = if let Some(data) = thumb_data {
                         let (t_w, t_h, _) = &**data;
-                        let t_x = x_cell + (thumb_size as i32 - *t_w as i32) / 2;
-                        let t_y = y_cell + (thumb_size as i32 - *t_h as i32) / 2;
+                        let t_x = x_cell + (thumb_size_i32 - *t_w as i32) / 2;
+                        let t_y = y_cell + (thumb_size_i32 - *t_h as i32) / 2;
                         (*t_w as i32, *t_h as i32, t_x, t_y)
+                    } else if let ImageSlot::MetadataLoaded(m) = slot {
+                        let aspect = m.width as f64 / m.height as f64;
+                        let (p_w, p_h) = if aspect >= 1.0 {
+                            (thumb_size_i32, (thumb_size as f64 / aspect) as i32)
+                        } else {
+                            ((thumb_size as f64 * aspect) as i32, thumb_size_i32)
+                        };
+                        (p_w, p_h, *base_t_x, *base_t_y)
                     } else {
-                        (p_size, p_size, *base_t_x, *base_t_y)
+                        (thumb_size_i32, thumb_size_i32, *base_t_x, *base_t_y)
                     };
 
                     draw_border_scanline(
@@ -361,16 +376,26 @@ pub fn draw_grid(
                     );
                 }
 
-                // --- 3. Draw Mark ---
+                // Draw Mark
                 if *is_marked {
-                    // Mark is a small box at bottom right
                     let (target_w, target_h, target_x, target_y) = if let Some(data) = thumb_data {
                         let (t_w, t_h, _) = &**data;
-                        let t_x = x_cell + (thumb_size as i32 - *t_w as i32) / 2;
-                        let t_y = y_cell + (thumb_size as i32 - *t_h as i32) / 2;
+                        let t_x = x_cell + (thumb_size_i32 - *t_w as i32) / 2;
+                        let t_y = y_cell + (thumb_size_i32 - *t_h as i32) / 2;
                         (*t_w as i32, *t_h as i32, t_x, t_y)
                     } else {
-                        (p_size, p_size, *base_t_x, *base_t_y)
+                        // Use base coordinates from gather step
+                        let (p_w, p_h) = if let ImageSlot::MetadataLoaded(m) = slot {
+                            let aspect = m.width as f64 / m.height as f64;
+                            if aspect >= 1.0 {
+                                (thumb_size_i32, (thumb_size as f64 / aspect) as i32)
+                            } else {
+                                ((thumb_size as f64 * aspect) as i32, thumb_size_i32)
+                            }
+                        } else {
+                            (thumb_size_i32, thumb_size_i32)
+                        };
+                        (p_w, p_h, *base_t_x, *base_t_y)
                     };
 
                     let mark_size = 12;
@@ -398,7 +423,6 @@ pub fn draw_grid(
         });
 }
 
-// Optimized helper for scanline rendering
 fn draw_border_scanline(
     row_pixels: &mut [u8],
     y: i32,
@@ -409,18 +433,13 @@ fn draw_border_scanline(
     let Rect(rx, ry, rw, rh) = rect;
     let thickness = 4;
 
-    // Check if this row y intersects the border geometry
-
-    // Top horizontal bar: ry .. ry+thickness
-    let in_top = y >= ry && y < ry + thickness;
-    // Bottom horizontal bar: ry+rh-thickness .. ry+rh
-    let in_bottom = y >= ry + rh - thickness && y < ry + rh;
-    // Middle vertical area: ry .. ry+rh (covers entire height)
     let in_vertical_range = y >= ry && y < ry + rh;
-
     if !in_vertical_range {
         return;
     }
+
+    let in_top = y >= ry && y < ry + thickness;
+    let in_bottom = y >= ry + rh - thickness && y < ry + rh;
 
     let color_alpha = [color.0, color.1, color.2, 255];
 
@@ -438,13 +457,9 @@ fn draw_border_scanline(
     };
 
     if in_top || in_bottom {
-        // Draw the full horizontal line
         draw_span(rx, rx + rw, row_pixels);
     } else {
-        // Draw left and right vertical bars
-        // Left: rx .. rx+thickness
         draw_span(rx, rx + thickness, row_pixels);
-        // Right: rx+rw-thickness .. rx+rw
         draw_span(rx + rw - thickness, rx + rw, row_pixels);
     }
 }

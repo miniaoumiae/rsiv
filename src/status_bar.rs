@@ -15,7 +15,7 @@ pub struct StatusBar {
     background_color: (u8, u8, u8),
     left_buffer: Buffer,
     right_buffer: Buffer,
-    
+
     // Caching for path truncation
     cached_raw_path: String,
     cached_max_width: u32,
@@ -80,7 +80,7 @@ impl StatusBar {
             .set_size(&mut font_system, None, Some(self.height as f32));
         self.right_buffer
             .set_size(&mut font_system, None, Some(self.height as f32));
-            
+
         // Invalidate cache
         self.cached_max_width = 0;
     }
@@ -141,7 +141,8 @@ impl StatusBar {
         };
 
         // Cache Check
-        let needs_recalc = raw_text_to_show != self.cached_raw_path || max_path_w != self.cached_max_width;
+        let needs_recalc =
+            raw_text_to_show != self.cached_raw_path || max_path_w != self.cached_max_width;
 
         if needs_recalc {
             self.cached_raw_path = raw_text_to_show.clone();
@@ -194,11 +195,11 @@ impl StatusBar {
 
         // Always set text from cache to ensure buffer is ready for drawing
         self.left_buffer.set_text(
-            &mut font_system, 
-            &self.cached_display_text, 
-            &attrs, 
-            Shaping::Advanced, 
-            None
+            &mut font_system,
+            &self.cached_display_text,
+            &attrs,
+            Shaping::Advanced,
+            None,
         );
         self.left_buffer.shape_until_scroll(&mut font_system, false);
 

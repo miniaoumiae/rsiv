@@ -30,7 +30,6 @@ pub struct ImageItem {
     pub format: ImageFormat,
 }
 
-// Separate struct for the heavy data, managed by Cache
 #[derive(Clone, Debug)]
 pub struct LoadedImage {
     pub width: u32,
