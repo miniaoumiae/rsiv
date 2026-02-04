@@ -21,55 +21,55 @@ If no file is found, internal defaults are used.
 
 This section documents the `[ui]` table of the configuration file.
 
-**bg_color** = "<string>"
+**bg_color** = `string`
 
 > The background color of the main canvas (behind the image).
 >
 > **Default:** `"#000000"`
 
-**status_bar_bg** = "<string>"
+**status_bar_bg** = `string`
 
 > The background color of the bottom status bar.
 >
 > **Default:** `"#303030"`
 
-**status_bar_fg** = "<string>"
+**status_bar_fg** = `string`
 
 > The text color of the status bar.
 >
 > **Default:** `"#FFFFFF"`
 
-**font_family** = "<string>"
+**font_family** = `string`
 
 > The font family used for text in the status bar.
 >
 > **Default:** `"monospace"`
 
-**font_size** = <integer>
+**font_size** = `integer`
 
 > The font size in points.
 >
 > **Default:** `13`
 
-**thumbnail_border_color** = "<string>"
+**thumbnail_border_color** = `string`
 
 > The color of the border surrounding the currently selected image in Grid/Thumbnail mode.
 >
 > **Default:** `"#FFFFFF"`
 
-**mark_color** = "<string>"
+**mark_color** = `string`
 
 > The color of the indicator tag for files that have been "marked" (selected).
 >
 > **Default:** `"#FF0000"`
 
-**loading_color** = "<string>"
+**loading_color** = `string`
 
 > The placeholder color used while an image is being decoded in the background.
 >
 > **Default:** `"#3c3c3c"`
 
-**error_color** = "<string>"
+**error_color** = `string`
 
 > The placeholder color used if an image fails to load.
 >
@@ -79,7 +79,7 @@ This section documents the `[ui]` table of the configuration file.
 
 This section documents the `[options]` table of the configuration file.
 
-**default_view** = "FitToWindow" | "BestFit" | "FitWidth" | "FitHeight" | "Absolute" | { Zoom = <float> }
+**default_view** = `"FitToWindow"` | `"BestFit"` | `"FitWidth"` | `"FitHeight"` | `"Absolute"` | `{ Zoom = float }`
 
 > Defines the initial scale mode when opening an image.
 >
@@ -92,49 +92,49 @@ This section documents the `[options]` table of the configuration file.
 >
 > **Default:** `"BestFit"`
 
-**auto_center** = true | false
+**auto_center** = `true` | `false`
 
 > When true, images are automatically centered on the screen when the scale mode is changed or reset.
 >
 > **Default:** `true`
 
-**clamp_pan** = true | false
+**clamp_pan** = `true` | `false`
 
 > When true, restricts panning so that the image cannot be moved off-screen.
 >
 > **Default:** `false`
 
-**thumbnail_size** = <integer>
+**thumbnail_size** = `integer`
 
 > The maximum width/height (in pixels) of thumbnails generated in Grid mode.
 >
 > **Default:** `160`
 
-**grid_pading** = <integer>
+**grid_pading** = `integer`
 
 > The padding (gap) in pixels between thumbnail cells in Grid mode.
 >
 > **Default:** `30`
 
-**zoom_max** = <float>
+**zoom_max** = `float`
 
 > The maximum zoom level allowed (e.g., 8.0 is 800%).
 >
 > **Default:** `8.0`
 
-**zoom_min** = <float>
+**zoom_min** = `float`
 
 > The minimum zoom level allowed (e.g., 0.1 is 10%).
 >
 > **Default:** `0.1`
 
-**image_cache_size** = <integer>
+**image_cache_size** = `integer`
 
 > The maximum number of full-resolution images to keep in memory (LRU cache).
 >
 > **Default:** `8`
 
-**thumb_cache_size** = <integer>
+**thumb_cache_size** = `integer`
 
 > The maximum number of thumbnails to keep in memory (LRU cache).
 >
@@ -146,7 +146,7 @@ This section documents the `[handlers]` table. Handlers allow you to execute ext
 
 To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), followed by the key defined below.
 
-**"<key>"** = ["<command>", "<arg>", ...]
+**"key"** = `["command", "arg", ...]`
 
 > The key matches a single character input. The value is an array representing the command to run.
 > The special string `%f` will be replaced by the absolute path of the image file.
@@ -165,7 +165,7 @@ To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), follow
 
 This section documents the `[keybindings]` table.
 
-Bindings can be a simple string (`"q"`) or an array of strings (`["q", "Esc"]`) to assign multiple keys to one action.
+Bindings can be a simple `string` or an `array of strings` to assign multiple keys to one action.
 
 **Modifiers:**
 Modifiers are specified by adding them before the key, separated by `+`.
@@ -177,57 +177,57 @@ Modifiers are specified by adding them before the key, separated by `+`.
 
 **Example:** `"Ctrl+Shift+f"`
 
-### Navigation & General
+### Navigation and General
 
-**quit** = <string> | [<string>]
+**quit** = `string` | `[string]`
 
 > Quit the application.
 >
 > **Default:** `"q"`
 
-**image_next** = <string> | [<string>]
+**image_next** = `string` | `[string]`
 
 > Go to the next image.
 >
 > **Default:** `"n"`
 
-**image_previous** = <string> | [<string>]
+**image_previous** = `string` | `[string]`
 
 > Go to the previous image.
 >
 > **Default:** `"p"`
 
-**first_image** = <string> | [<string>]
+**first_image** = `string` | `[string]`
 
 > Jump to the first image.
 >
 > **Default:** `"g"`
 
-**last_image** = <string> | [<string>]
+**last_image** = `string` | `[string]`
 
 > Jump to the last image.
 >
 > **Default:** `"G"`
 
-**next_mark** = <string> | [<string>]
+**next_mark** = `string` | `[string]`
 
 > Jump to the next marked image.
 >
 > **Default:** `"N"`
 
-**prev_mark** = <string> | [<string>]
+**prev_mark** = `string` | `[string]`
 
 > Jump to the previous marked image.
 >
 > **Default:** `"P"`
 
-**toggle_grid** = <string> | [<string>]
+**toggle_grid** = `string` | `[string]`
 
 > Switch between Image View and Thumbnail/Grid View.
 >
 > **Default:** `"Enter"`
 
-**handler_prefix** = <string> | [<string>]
+**handler_prefix** = `string` | `[string]`
 
 > The prefix key to enter "Handler Mode".
 >
@@ -235,136 +235,136 @@ Modifiers are specified by adding them before the key, separated by `+`.
 
 ### View Manipulation
 
-**zoom_in** = <string> | [<string>]
+**zoom_in** = `string` | `[string]`
 
 > Zoom in by 10%.
 >
 > **Default:** `"+"`
 
-**zoom_out** = <string> | [<string>]
+**zoom_out** = `string` | `[string]`
 
 > Zoom out by 10%.
 >
 > **Default:** `"-"`
 
-**zoom_reset** = <string> | [<string>]
+**zoom_reset** = `string` | `[string]`
 
 > Reset zoom to 100% (Absolute).
 >
 > **Default:** `"="`
 
-**fit_best** = <string> | [<string>]
+**fit_best** = `string` | `[string]`
 
 > Set mode to Fit To Window (scales up to fill).
 >
 > **Default:** `"f"`
 
-**fit_best_no_upscale** = <string> | [<string>]
+**fit_best_no_upscale** = `string` | `[string]`
 
 > Set mode to Best Fit (scales down to fit, never upscales).
 >
 > **Default:** `"F"`
 
-**fit_width** = <string> | [<string>]
+**fit_width** = `string` | `[string]`
 
 > Fit image to window width.
 >
 > **Default:** `"W"`
 
-**fit_height** = <string> | [<string>]
+**fit_height** = `string` | `[string]`
 
 > Fit image to window height.
 >
 > **Default:** `"H"`
 
-**rotate_cw** = <string> | [<string>]
+**rotate_cw** = `string` | `[string]`
 
 > Rotate image 90 degrees clockwise.
 >
 > **Default:** `">"`
 
-**rotate_ccw** = <string> | [<string>]
+**rotate_ccw** = `string` | `[string]`
 
 > Rotate image 90 degrees counter-clockwise.
 >
 > **Default:** `"<"`
 
-**image_flip_horizontal** = <string> | [<string>]
+**image_flip_horizontal** = `string` | `[string]`
 
 > Flip image horizontally.
 >
 > **Default:** `"_"`
 
-**image_flip_vertical** = <string> | [<string>]
+**image_flip_vertical** = `string` | `[string]`
 
 > Flip image vertically.
 >
 > **Default:** `"?"`
 
-### Panning & Movement
+### Panning and Movement
 
-**view_pan_left** = <string> | [<string>]
+**view_pan_left** = `string` | `[string]`
 
 > Pan view left (or move cursor left in Grid).
 >
 > **Default:** `["h", "Left"]`
 
-**view_pan_down** = <string> | [<string>]
+**view_pan_down** = `string` | `[string]`
 
 > Pan view down (or move cursor down in Grid).
 >
 > **Default:** `["j", "Down"]`
 
-**view_pan_up** = <string> | [<string>]
+**view_pan_up** = `string` | `[string]`
 
 > Pan view up (or move cursor up in Grid).
 >
 > **Default:** `["k", "Up"]`
 
-**view_pan_right** = <string> | [<string>]
+**view_pan_right** = `string` | `[string]`
 
 > Pan view right (or move cursor right in Grid).
 >
 > **Default:** `["l", "Right"]`
 
-### Toggles & Actions
+### Toggles and Actions
 
-**toggle_status_bar** = <string> | [<string>]
+**toggle_status_bar** = `string` | `[string]`
 
 > Show/Hide the status bar.
 >
 > **Default:** `"b"`
 
-**toggle_animation** = <string> | [<string>]
+**toggle_animation** = `string` | `[string]`
 
 > Play/Pause GIF animations.
 >
 > **Default:** `"Ctrl+a"`
 
-**mark_file** = <string> | [<string>]
+**mark_file** = `string` | `[string]`
 
 > Toggle the "mark" on the current file.
 >
 > **Default:** `"m"`
 
-**mark_all** = <string> | [<string>]
+**mark_all** = `string` | `[string]`
 
 > Toggle marks on ALL files (invert selection).
 >
 > **Default:** `"M"`
 
-**unmark_all** = <string> | [<string>]
+**unmark_all** = `string` | `[string]`
 
 > Remove marks from all files.
 >
 > **Default:** `"u"`
 
-**remove_image** = <string> | [<string>]
+**remove_image** = `string` | `[string]`
 
 > Remove the current image from the view.
 >
 > **Default:** `"D"`
 
-## CREDITS & INSPIRATION
+## CREDITS AND INSPIRATION
 
 The format and style of this configuration documentation is heavily inspired by the excellent documentation of [Alacritty](https://alacritty.org/config-alacritty.html).

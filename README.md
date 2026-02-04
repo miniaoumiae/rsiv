@@ -10,8 +10,7 @@
 ## Features
 
 - **Thumbnail Mode**: A grid-based view to browse directories.
-- **Memory Efficient**: Uses memmap2 for zero-copy I/O and an LRU cache for decoded pixels.
-- **Async Pipeline**: Prioritized background workers ensure the UI stays at 60 FPS while thumbnails load.
+- **Constant Speed**: Uses a sliding window to load only what you see, keeping the app fast and crash-proof even with thousands of images.
 - **Format Support**: Static images, animated **GIFs**, and **SVGs**.
 - **Script Handlers**: Execute external commands on images.
 - **Configuration**: Fully customizable keybindings and UI in toml.
@@ -125,7 +124,7 @@ You can find the default keybindings there as well.
 - [ ] Numeric prefix like `10n`
 - [ ] Config hot reload ?
 - [ ] Images reload on change
-- [ ] Memory usage optimization (`[options]`)
+- [x] Memory usage optimization (`[options]`)
 - [ ] Search/Filter mode
 
 ## Credits
