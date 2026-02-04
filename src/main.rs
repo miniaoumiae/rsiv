@@ -1,4 +1,5 @@
 mod app;
+mod cache;
 mod config;
 mod frame_buffer;
 mod image_item;
@@ -42,9 +43,9 @@ fn main() {
 
     // We pass cli.output_marked to App just in case it needs to know,
     // but primarily we check the app state after the loop finishes.
-    let mut app = App::new(vec![], cli.thumbnail);
+    let mut app = App::new(vec![], cli.thumbnail, proxy.clone());
 
-    loader::spawn_load_worker(cli.paths, cli.recursive, proxy);
+    loader::spawn_discovery_worker(cli.paths, cli.recursive, proxy.clone());
 
     let _ = event_loop.run_app(&mut app);
 

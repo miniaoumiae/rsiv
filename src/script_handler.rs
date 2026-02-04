@@ -1,6 +1,7 @@
 use crate::app::{App, InputMode};
 use crate::config::AppConfig;
 use crate::image_item::{ImageItem, ImageSlot};
+use std::path::PathBuf;
 
 impl App {
     pub fn execute_handler(&mut self, handler_key: &str, on_marked: bool) {
@@ -12,8 +13,8 @@ impl App {
 
         let paths: Vec<String> = if on_marked {
             self.marked_files.iter().cloned().collect()
-        } else if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-            vec![item.path.clone()]
+        } else if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+            vec![item.path.to_string_lossy().to_string()]
         } else {
             vec![]
         };
@@ -42,13 +43,14 @@ impl App {
     }
 
     pub fn refresh_specific_path(&mut self, path: &str) {
-        let path_buf = std::path::PathBuf::from(path);
+        let path_buf = PathBuf::from(path);
 
         // Check if file was deleted
         if !path_buf.exists() {
+            self.cache.remove(&path_buf);
             self.images.retain(|slot| {
-                if let ImageSlot::Loaded(item) = slot {
-                    item.path != path
+                if let ImageSlot::MetadataLoaded(item) = slot {
+                    item.path != path_buf
                 } else {
                     true
                 }
@@ -60,20 +62,21 @@ impl App {
             return;
         }
 
-        // Re-load from disk if it exists (for filters/modifications)
+        // Re-load from disk (invalidate cache)
+        self.cache.remove(&path_buf);
+
         if let Some(idx) = self.images.iter().position(|s| {
-            if let ImageSlot::Loaded(item) = s {
-                item.path == path
+            if let ImageSlot::MetadataLoaded(item) = s {
+                item.path == path_buf
             } else {
                 false
             }
         }) {
-            if let Ok(data) = std::fs::read(&path_buf) {
-                if let Ok(format) = crate::loader::identify_format(&path_buf) {
-                    if let Ok(item) = ImageItem::from_parts(path_buf, format, data) {
-                        self.images[idx] = ImageSlot::Loaded(item);
-                    }
-                }
+            if let Ok(format) = crate::loader::identify_format(&path_buf) {
+                 if let Ok((width, height)) = crate::loader::probe_image(&path_buf, format) {
+                      let item = ImageItem { path: path_buf.clone(), width, height, format };
+                      self.images[idx] = ImageSlot::MetadataLoaded(item);
+                 }
             }
         }
     }

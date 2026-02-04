@@ -1,14 +1,18 @@
+
+use crate::cache::CacheManager;
 use crate::image_item::{ImageItem, ImageSlot};
 use crate::keybinds::Action;
+use crate::loader::Loader;
 use crate::status_bar::StatusBar;
 use crate::view_mode::ViewMode;
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
-use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowId};
 
@@ -32,9 +36,12 @@ use winit::platform::x11::WindowAttributesExtX11;
 #[derive(Debug)]
 pub enum AppEvent {
     InitialCount(usize),
-    ImageLoaded(usize, ImageItem),
-    ImageLoadFailed(usize, String),
-    LoadComplete,
+    MetadataLoaded(usize, ImageItem),
+    MetadataError(usize, String),
+    DiscoveryComplete,
+    ImagePixelsLoaded(PathBuf, Arc<crate::image_item::LoadedImage>),
+    ThumbnailLoaded(PathBuf, Arc<(u32, u32, Vec<u8>)>),
+    LoadError(PathBuf, String),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -53,6 +60,10 @@ pub struct App {
     pub window: Option<Arc<Window>>,
     pub pixels: Option<Pixels<'static>>,
 
+    // Resources
+    pub loader: Loader,
+    pub cache: CacheManager,
+
     // Animation state
     pub current_frame_index: usize,
     pub is_playing: bool,
@@ -66,14 +77,14 @@ pub struct App {
     // UI
     pub status_bar: StatusBar,
     pub show_status_bar: bool,
-    pub load_complete: bool,
+    pub discovery_complete: bool,
     pub grid_mode: bool,
     pub marked_files: HashSet<String>,
     pub bindings: Vec<crate::keybinds::Binding>,
 }
 
 impl App {
-    pub fn new(images: Vec<ImageSlot>, start_in_grid_mode: bool) -> Self {
+    pub fn new(images: Vec<ImageSlot>, start_in_grid_mode: bool, proxy: EventLoopProxy<AppEvent>) -> Self {
         let config = crate::config::AppConfig::get();
 
         Self {
@@ -84,6 +95,8 @@ impl App {
             off_y: 0,
             window: None,
             pixels: None,
+            loader: Loader::new(proxy),
+            cache: CacheManager::new(8, 200), // Limits: 8 full images, 200 thumbs
             current_frame_index: 0,
             is_playing: true,
             last_update: Instant::now(),
@@ -92,7 +105,7 @@ impl App {
             modifiers: ModifiersState::default(),
             status_bar: StatusBar::new(),
             show_status_bar: true,
-            load_complete: false,
+            discovery_complete: false,
             grid_mode: start_in_grid_mode,
             marked_files: HashSet::new(),
             bindings: crate::keybinds::Binding::get_all_bindings(),
@@ -116,7 +129,7 @@ impl App {
         if self.images.is_empty() {
             return 1.0;
         }
-        let ImageSlot::Loaded(item) = &self.images[self.current_index] else {
+        let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] else {
             return 1.0;
         };
 
@@ -126,7 +139,6 @@ impl App {
             return 1.0;
         };
 
-        // Avoid division by zero
         if buf_w <= 0.0 || buf_h <= 0.0 {
             return 1.0;
         }
@@ -196,8 +208,8 @@ impl App {
                 if !self.images.is_empty() && !self.marked_files.is_empty() {
                     for i in 1..self.images.len() {
                         let idx = (self.current_index + i) % self.images.len();
-                        if let ImageSlot::Loaded(item) = &self.images[idx] {
-                            if self.marked_files.contains(&item.path) {
+                        if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
+                            if self.marked_files.contains(&item.path.to_string_lossy().to_string()) {
                                 self.current_index = idx;
                                 self.reset_view_for_new_image();
                                 needs_redraw = true;
@@ -211,8 +223,8 @@ impl App {
                 if !self.images.is_empty() && !self.marked_files.is_empty() {
                     for i in 1..self.images.len() {
                         let idx = (self.current_index + self.images.len() - i) % self.images.len();
-                        if let ImageSlot::Loaded(item) = &self.images[idx] {
-                            if self.marked_files.contains(&item.path) {
+                        if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
+                             if self.marked_files.contains(&item.path.to_string_lossy().to_string()) {
                                 self.current_index = idx;
                                 self.reset_view_for_new_image();
                                 needs_redraw = true;
@@ -365,8 +377,8 @@ impl App {
         match action {
             Action::MarkFile => {
                 if !self.images.is_empty() {
-                    if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                        let path = item.path.clone();
+                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                        let path = item.path.to_string_lossy().to_string();
                         if self.marked_files.contains(&path) {
                             self.marked_files.remove(&path);
                         } else {
@@ -378,8 +390,8 @@ impl App {
             }
             Action::RemoveImage => {
                 if !self.images.is_empty() {
-                    if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                        self.marked_files.remove(&item.path);
+                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                        self.marked_files.remove(&item.path.to_string_lossy().to_string());
                     }
                     self.images.remove(self.current_index);
                     if self.images.is_empty() {
@@ -393,9 +405,10 @@ impl App {
             }
             Action::ToggleMarks => {
                 for item_slot in &self.images {
-                    if let ImageSlot::Loaded(item) = item_slot {
-                        if !self.marked_files.remove(&item.path) {
-                            self.marked_files.insert(item.path.clone());
+                    if let ImageSlot::MetadataLoaded(item) = item_slot {
+                         let path = item.path.to_string_lossy().to_string();
+                        if !self.marked_files.remove(&path) {
+                            self.marked_files.insert(path);
                         }
                     }
                 }
@@ -405,39 +418,15 @@ impl App {
                 self.marked_files.clear();
                 needs_redraw = true;
             }
+            // Temporarily disabled edits in this refactor
             Action::RotateCW => {
-                if !self.images.is_empty() {
-                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                        item.rotate(true);
-                        self.reset_view_for_new_image();
-                        needs_redraw = true;
-                    }
-                }
+                 // Needs to modify LoadedImage in cache or update metadata
             }
             Action::RotateCCW => {
-                if !self.images.is_empty() {
-                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                        item.rotate(false);
-                        self.reset_view_for_new_image();
-                        needs_redraw = true;
-                    }
-                }
             }
             Action::FlipHorizontal => {
-                if !self.images.is_empty() {
-                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                        item.flip_horizontal();
-                        needs_redraw = true;
-                    }
-                }
             }
             Action::FlipVertical => {
-                if !self.images.is_empty() {
-                    if let ImageSlot::Loaded(item) = &mut self.images[self.current_index] {
-                        item.flip_vertical();
-                        needs_redraw = true;
-                    }
-                }
             }
             _ => {}
         }
@@ -471,37 +460,93 @@ impl App {
         if self.images.is_empty() {
             return;
         }
+        
+        // --- 1. Request Logic (Pull Architecture) ---
+        if self.grid_mode {
+             if let Some(w) = &self.window {
+                let config = crate::config::AppConfig::get();
+                let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+                let buf_w = w.inner_size().width;
+                let _buf_h = w.inner_size().height; // Approximate
+                let cols = (buf_w / cell_size).max(1);
+                
+                // Determine visible range
+                let _start_idx = ((self.current_index as u32 / cols) * cols) as usize; // Simplified to start near current
+                // Better: we need scroll state. In `draw_grid`, we scroll so selected is in middle.
+                // We'll just request neighbors of current_index for now, e.g. +/- 50
+                let range = 50;
+                let start = self.current_index.saturating_sub(range);
+                let end = (self.current_index + range).min(self.images.len());
+                
+                for i in start..end {
+                     if let ImageSlot::MetadataLoaded(item) = &self.images[i] {
+                         // Check cache
+                         if self.cache.get_thumbnail(&item.path).is_none() {
+                             // Request load
+                             self.loader.request_thumbnail(item.path.clone(), item.format, config.options.thumbnail_size);
+                         }
+                     }
+                }
+            }
+        } else {
+             // Single view
+             if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                 if self.cache.get_image(&item.path).is_none() {
+                     self.loader.request_image(item.path.clone(), item.format);
+                 }
+                 
+                 // Pre-fetch next
+                 if self.current_index + 1 < self.images.len() {
+                      if let ImageSlot::MetadataLoaded(next) = &self.images[self.current_index + 1] {
+                          if self.cache.get_image(&next.path).is_none() {
+                              // We could have a lower priority for this if we had priority levels
+                               self.loader.request_image(next.path.clone(), next.format);
+                          }
+                      }
+                 }
+                  // Pre-fetch prev
+                 if self.current_index > 0 {
+                      if let ImageSlot::MetadataLoaded(prev) = &self.images[self.current_index - 1] {
+                          if self.cache.get_image(&prev.path).is_none() {
+                               self.loader.request_image(prev.path.clone(), prev.format);
+                          }
+                      }
+                 }
+             }
+        }
 
-        // Animation
+        // --- 2. Animation ---
         if !self.grid_mode {
-            if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                let now = Instant::now();
-                let dt = now.duration_since(self.last_update);
-                self.last_update = now;
+            if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                 if let Some(loaded_image) = self.cache.get_image(&item.path) {
+                    let now = Instant::now();
+                    let dt = now.duration_since(self.last_update);
+                    self.last_update = now;
 
-                let frame_count = item.frames.len();
+                    let frame_count = loaded_image.frames.len();
 
-                if self.is_playing && frame_count > 1 {
-                    self.frame_timer += dt;
-                    let current_delay = item.frames[self.current_frame_index].delay;
-                    let effective_delay = if current_delay.is_zero() {
-                        Duration::from_millis(100)
-                    } else {
-                        current_delay
-                    };
+                    if self.is_playing && frame_count > 1 {
+                        self.frame_timer += dt;
+                        let current_delay = loaded_image.frames[self.current_frame_index].delay;
+                        let effective_delay = if current_delay.is_zero() {
+                            Duration::from_millis(100)
+                        } else {
+                            current_delay
+                        };
 
-                    if self.frame_timer >= effective_delay {
-                        self.frame_timer = Duration::ZERO;
-                        self.current_frame_index = (self.current_frame_index + 1) % frame_count;
-                    }
-                    if let Some(w) = &self.window {
-                        w.request_redraw();
+                        if self.frame_timer >= effective_delay {
+                            self.frame_timer = Duration::ZERO;
+                            self.current_frame_index = (self.current_frame_index + 1) % frame_count;
+                        }
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
                     }
                 }
             }
         }
 
-        // Prepare Drawing Surface
+        // --- 3. Draw ---
         let scale = self.get_current_scale();
         let Some(pixels) = &mut self.pixels else {
             return;
@@ -511,7 +556,6 @@ impl App {
         let config = crate::config::AppConfig::get();
         let bg_color = crate::utils::parse_color(&config.ui.bg_color);
 
-        // Clear Background
         crate::renderer::clear(frame_slice, bg_color);
 
         let (buf_w, buf_h) = if let Some(w) = &self.window {
@@ -527,7 +571,6 @@ impl App {
             buf_h
         };
 
-        // Render Content
         if self.grid_mode {
             let colors = crate::renderer::GridColors {
                 bg: bg_color,
@@ -541,47 +584,67 @@ impl App {
                 frame_slice,
                 buf_w,
                 available_h,
-                &mut self.images,
+                &self.images,
+                &mut self.cache,
                 self.current_index,
                 &colors,
                 &self.marked_files,
             );
         } else {
-            // Render the Image
-            if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                let params = crate::renderer::DrawImageParams {
-                    item,
-                    frame_idx: self.current_frame_index,
-                    scale,
-                    off_x: self.off_x,
-                    off_y: self.off_y,
-                };
-                crate::renderer::draw_image(frame_slice, buf_w, available_h, &params);
+            if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                // Check if loaded
+                if let Some(loaded_image) = self.cache.get_image(&item.path) {
+                    let params = crate::renderer::DrawImageParams {
+                        image: &loaded_image,
+                        frame_idx: self.current_frame_index,
+                        scale,
+                        off_x: self.off_x,
+                        off_y: self.off_y,
+                    };
+                    crate::renderer::draw_image(frame_slice, buf_w, available_h, &params);
+                } else {
+                    // Draw Loading Text (using Status Bar renderer or simple center text?)
+                    // For now, we rely on Status Bar "Loading..."
+                }
             }
         }
 
-        // Draw Status Bar
         if self.show_status_bar && buf_h > 0 {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
 
             match &self.images[self.current_index] {
-                ImageSlot::Loaded(item) => {
-                    let is_marked = self.marked_files.contains(&item.path);
+                ImageSlot::MetadataLoaded(item) => {
+                    let is_marked = self.marked_files.contains(&item.path.to_string_lossy().to_string());
+                    
+                    // Check if pixels are actually loaded for the status text
+                    let is_loaded = self.cache.get_image(&item.path).is_some();
 
-                    self.status_bar.draw(
-                        &mut fb,
-                        if self.grid_mode {
-                            100
-                        } else {
-                            (scale * 100.0) as u32
-                        },
-                        self.current_index + 1,
-                        self.images.len(),
-                        &item.path,
-                        is_marked,
-                        &self.input_mode,
-                    );
+                    if is_loaded || self.grid_mode {
+                        self.status_bar.draw(
+                            &mut fb,
+                            if self.grid_mode {
+                                100
+                            } else {
+                                (scale * 100.0) as u32
+                            },
+                            self.current_index + 1,
+                            self.images.len(),
+                            &item.path.to_string_lossy(),
+                            is_marked,
+                            &self.input_mode,
+                        );
+                    } else {
+                         self.status_bar.draw(
+                            &mut fb,
+                            0,
+                            self.current_index + 1,
+                            self.images.len(),
+                            "Loading...",
+                            is_marked,
+                            &self.input_mode,
+                        );
+                    }
                 }
                 ImageSlot::Error(err) => {
                     self.status_bar.draw(
@@ -594,18 +657,13 @@ impl App {
                         &self.input_mode,
                     );
                 }
-                ImageSlot::Loading => {
-                    let message = if self.load_complete {
-                        "Error Loading Image"
-                    } else {
-                        "Loading..."
-                    };
+                ImageSlot::PendingMetadata => {
                     self.status_bar.draw(
                         &mut fb,
                         0,
                         self.current_index + 1,
                         self.images.len(),
-                        message,
+                        "Discovering...",
                         false,
                         &self.input_mode,
                     );
@@ -651,30 +709,46 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::InitialCount(count) => {
-                self.images = vec![ImageSlot::Loading; count];
+                self.images = vec![ImageSlot::PendingMetadata; count];
             }
-            AppEvent::ImageLoaded(idx, item) => {
+            AppEvent::MetadataLoaded(idx, item) => {
                 if let Some(slot) = self.images.get_mut(idx) {
-                    *slot = ImageSlot::Loaded(item);
+                    *slot = ImageSlot::MetadataLoaded(item);
                 }
                 if self.current_index == idx {
                     self.window.as_ref().unwrap().request_redraw();
                 }
             }
-            AppEvent::ImageLoadFailed(idx, err) => {
+            AppEvent::MetadataError(idx, err) => {
                 if let Some(slot) = self.images.get_mut(idx) {
                     *slot = ImageSlot::Error(err);
                 }
-                if self.current_index == idx {
-                    self.window.as_ref().unwrap().request_redraw();
-                }
             }
-            AppEvent::LoadComplete => {
-                self.load_complete = true;
+            AppEvent::DiscoveryComplete => {
+                self.discovery_complete = true;
                 if self.images.is_empty() {
                     eprintln!("No images found. Exiting...");
                     _el.exit();
                 }
+            }
+            AppEvent::ImagePixelsLoaded(path, image) => {
+                self.cache.insert_image(path.clone(), image);
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    if item.path == path {
+                         self.window.as_ref().unwrap().request_redraw();
+                    }
+                }
+            }
+            AppEvent::ThumbnailLoaded(path, thumb) => {
+                self.cache.insert_thumbnail(path, thumb);
+                 if self.grid_mode {
+                     self.window.as_ref().unwrap().request_redraw();
+                 }
+            }
+            AppEvent::LoadError(_path, _err) => {
+                // Optionally mark the slot as error?
+                // But we don't know the index easily without searching.
+                // For now, logging to stderr is enough or handling it in status bar if current
             }
         }
     }
@@ -788,40 +862,9 @@ impl ApplicationHandler<AppEvent> for App {
                     }
 
                     if needs_redraw {
-                        if let Some(w) = &self.window {
-                            // Clamping logic
-                            let size = w.inner_size();
-                            let buf_w = size.width as i32;
-                            // Available height for clamping logic should also consider status bar
-                            let buf_h = if self.show_status_bar {
-                                size.height as i32 - self.status_bar.height as i32
-                            } else {
-                                size.height as i32
-                            };
-
-                            if !self.images.is_empty() {
-                                if let ImageSlot::Loaded(item) = &self.images[self.current_index] {
-                                    let scale = self.get_current_scale();
-                                    let img_w = (item.width as f64 * scale) as i32;
-                                    let img_h = (item.height as f64 * scale) as i32;
-
-                                    let config = crate::config::AppConfig::get();
-                                    let (limit_x, limit_y) = if config.options.clamp_pan {
-                                        ((buf_w - img_w).abs() / 2, (buf_h - img_h).abs() / 2)
-                                    } else {
-                                        (
-                                            (buf_w / 2) + (img_w / 2) - 10,
-                                            (buf_h / 2) + (img_h / 2) - 10,
-                                        )
-                                    };
-
-                                    self.off_x = self.off_x.max(-limit_x).min(limit_x);
-                                    self.off_y = self.off_y.max(-limit_y).min(limit_y);
-                                }
-                            }
-
-                            w.request_redraw();
-                        }
+                         if let Some(w) = &self.window {
+                             w.request_redraw();
+                         }
                     }
                 }
             }
