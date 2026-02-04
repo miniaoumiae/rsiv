@@ -187,73 +187,27 @@ fn worker_loop(
     proxy: EventLoopProxy<AppEvent>,
 ) {
     loop {
-        // Strict priority: check urgent first
+        // Priority 1: Check urgent requests immediately (non-blocking)
         if let Ok(req) = urgent_rx.try_recv() {
             process_request(req, &proxy);
             continue;
         }
 
-        // If no urgent, check stack or block on urgent
-        // We need to wait on either urgent_rx or the condition variable.
-        // Since we can't easily select on cvar and channel, we can do a blocking check with a timeout or just prioritize loop.
-        // A better approach for mixed signals is polling or a unified signal mechanism, but here is a simple hybrid:
-
-        // Check stack under lock
-        let req = {
-            let (lock, _cvar) = &*background_stack;
-            let mut stack = lock.lock().unwrap();
-            stack.pop_front()
-        };
-
-        if let Some(req) = req {
-            process_request(req, &proxy);
-        } else {
-            // Stack is empty. Wait for urgent or stack signal.
-            // We use select! with a short timeout or rely on channel blocking if we can't wait on cvar easily.
-            // However, `crossbeam_channel::select!` doesn't support Condvar.
-            // To properly sleep, we should wait on the Condvar BUT also be wakeable by urgent_rx.
-            // This is tricky.
-            // Simplification: Wait on urgent_rx with a timeout, then check stack again?
-            // OR: Since we have multiple workers, maybe just block on the stack if urgent is empty?
-            // But urgent messages must wake us up.
-
-            // Alternative: We can just use a short sleep or loop.
-            // Better yet: Just block on urgent_rx if stack is empty?
-            // No, because stack might get items.
-
-            // Correct implementation with mixed sources usually requires a "Wakeup" message on the urgent channel
-            // whenever something is added to the stack, OR a unified channel.
-            // But we want LIFO for stack.
-
-            // Let's use a small timeout on urgent_rx.recv_timeout. If it times out, we check the stack.
-            // To properly wait on stack, we would need to hold the lock and wait on cvar.
-
-            // Implementation choice:
-            // 1. Try recv urgent (non-blocking) -> handled above.
-            // 2. If stack empty, block on urgent_rx (indefinitely? No, what if stack gets item?).
-            //    Wait, stack items come from `request_thumbnail` which notifies cvar.
-
-            // Refined logic:
-            // We iterate.
-            // 1. Check urgent. If found, process.
-            // 2. Check stack. If found, process.
-            // 3. If both empty, we need to sleep until either happens.
-            //    This is hard without a unified primitive.
-            //    Let's compromise: Use `recv_timeout` on urgent. If timeout, check stack with `wait_timeout`.
-
-            match urgent_rx.recv_timeout(Duration::from_millis(10)) {
-                Ok(req) => process_request(req, &proxy),
-                Err(_) => {
-                    // Check stack again, if empty wait on cvar with timeout (to allow checking urgent again)
-                    let (lock, cvar) = &*background_stack;
-                    let mut stack = lock.lock().unwrap();
-                    if let Some(req) = stack.pop_front() {
-                        drop(stack);
-                        process_request(req, &proxy);
-                    } else {
-                        // Wait for notification or timeout to check urgent again
-                        let _ = cvar.wait_timeout(stack, Duration::from_millis(50)).unwrap();
-                    }
+        // Priority 2: Wait briefly for urgent requests
+        // We use a short timeout because we cannot select on both a Channel and a Condvar.
+        match urgent_rx.recv_timeout(Duration::from_millis(10)) {
+            Ok(req) => process_request(req, &proxy),
+            Err(_) => {
+                // Priority 3: If no urgent tasks, process background stack (LIFO)
+                let (lock, cvar) = &*background_stack;
+                let mut stack = lock.lock().unwrap();
+                
+                if let Some(req) = stack.pop_front() {
+                    drop(stack); // Release lock before processing
+                    process_request(req, &proxy);
+                } else {
+                    // Priority 4: Wait for new background tasks (or timeout to check urgent again)
+                    let _ = cvar.wait_timeout(stack, Duration::from_millis(50)).unwrap();
                 }
             }
         }
@@ -301,7 +255,31 @@ fn load_thumbnail(
     format: ImageFormat,
     size: u32,
 ) -> Result<(u32, u32, Vec<u8>), String> {
-    // For now, load full image and resize. Optimization: load at scale if possible (e.g. jpeg)
+    // Optimization: For static images, decode and resize immediately to save memory.
+    if format == ImageFormat::Static {
+        let file = File::open(path).map_err(|e| e.to_string())?;
+        let mmap = unsafe { Mmap::map(&file).map_err(|e| e.to_string())? };
+        let data = &mmap[..];
+
+        let mut reader = ImageReader::new(Cursor::new(data))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+
+        // Safety limits same as full load
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(32768);
+        limits.max_image_height = Some(32768);
+        limits.max_alloc = Some(4 * 1024 * 1024 * 1024);
+        reader.limits(limits);
+
+        // Decode and resize
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        // Use `thumbnail` which downscales to fit within size x size, preserving aspect ratio
+        let thumb = img.thumbnail(size, size);
+        return Ok((thumb.width(), thumb.height(), thumb.to_rgba8().into_raw()));
+    }
+
+    // Fallback for others: load full and resize
     let img = load_full_image(path, format)?;
     if let Some(first_frame) = img.frames.first() {
         if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
@@ -405,7 +383,7 @@ fn decode_static(file_data: &[u8]) -> Result<LoadedImage, String> {
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(32768);
     limits.max_image_height = Some(32768);
-    limits.max_alloc = Some(4 * 1024 * 1024 * 1024); // 4GB limit
+    limits.max_alloc = Some(4 * 1024 * 1024 * 1024); // 4GB limit for decompression
     reader.limits(limits);
 
     let img = reader.decode().map_err(|e| e.to_string())?;
