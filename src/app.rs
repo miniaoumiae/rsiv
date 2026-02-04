@@ -1,4 +1,3 @@
-
 use crate::cache::CacheManager;
 use crate::image_item::{ImageItem, ImageSlot};
 use crate::keybinds::Action;
@@ -63,6 +62,7 @@ pub struct App {
     // Resources
     pub loader: Loader,
     pub cache: CacheManager,
+    pub pending: HashSet<PathBuf>, // Track what we've already sent to the loader
 
     // Animation state
     pub current_frame_index: usize,
@@ -97,6 +97,7 @@ impl App {
             pixels: None,
             loader: Loader::new(proxy),
             cache: CacheManager::new(8, 200), // Limits: 8 full images, 200 thumbs
+            pending: HashSet::new(),
             current_frame_index: 0,
             is_playing: true,
             last_update: Instant::now(),
@@ -467,21 +468,35 @@ impl App {
                 let config = crate::config::AppConfig::get();
                 let cell_size = config.options.thumbnail_size + config.options.grid_pading;
                 let buf_w = w.inner_size().width;
-                let _buf_h = w.inner_size().height; // Approximate
+                let buf_h = w.inner_size().height; // Approximate
                 let cols = (buf_w / cell_size).max(1);
                 
-                // Determine visible range
-                let _start_idx = ((self.current_index as u32 / cols) * cols) as usize; // Simplified to start near current
-                // Better: we need scroll state. In `draw_grid`, we scroll so selected is in middle.
-                // We'll just request neighbors of current_index for now, e.g. +/- 50
-                let range = 50;
-                let start = self.current_index.saturating_sub(range);
-                let end = (self.current_index + range).min(self.images.len());
+                // Calculate visible rows
+                // We need to know the scroll_y which is computed in draw_grid based on current_index
+                // For now, let's replicate the logic or approximate it.
+                // In draw_grid:
+                // let current_row = (selected_idx as u32) / cols;
+                // let scroll_y = if current_row * cell_size > buf_h as u32 / 2 { ... }
                 
-                for i in start..end {
+                let current_row = (self.current_index as u32) / cols;
+                let scroll_y = if current_row * cell_size > buf_h / 2 {
+                    (current_row * cell_size) as i32 - (buf_h as i32 / 2) + (cell_size as i32 / 2)
+                } else {
+                    0
+                };
+                
+                let start_row = scroll_y.max(0) as u32 / cell_size;
+                let rows_visible = (buf_h / cell_size) + 2;
+                
+                let start_idx = (start_row * cols) as usize;
+                let end_idx = ((start_row + rows_visible) * cols) as usize;
+                let end_idx = end_idx.min(self.images.len());
+                
+                for i in start_idx..end_idx {
                      if let ImageSlot::MetadataLoaded(item) = &self.images[i] {
-                         // Check cache
-                         if self.cache.get_thumbnail(&item.path).is_none() {
+                         // Check cache & pending
+                         if self.cache.get_thumbnail(&item.path).is_none() && !self.pending.contains(&item.path) {
+                             self.pending.insert(item.path.clone());
                              // Request load
                              self.loader.request_thumbnail(item.path.clone(), item.format, config.options.thumbnail_size);
                          }
@@ -491,15 +506,16 @@ impl App {
         } else {
              // Single view
              if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                 if self.cache.get_image(&item.path).is_none() {
+                 if self.cache.get_image(&item.path).is_none() && !self.pending.contains(&item.path) {
+                     self.pending.insert(item.path.clone());
                      self.loader.request_image(item.path.clone(), item.format);
                  }
                  
                  // Pre-fetch next
                  if self.current_index + 1 < self.images.len() {
                       if let ImageSlot::MetadataLoaded(next) = &self.images[self.current_index + 1] {
-                          if self.cache.get_image(&next.path).is_none() {
-                              // We could have a lower priority for this if we had priority levels
+                          if self.cache.get_image(&next.path).is_none() && !self.pending.contains(&next.path) {
+                               self.pending.insert(next.path.clone());
                                self.loader.request_image(next.path.clone(), next.format);
                           }
                       }
@@ -507,7 +523,8 @@ impl App {
                   // Pre-fetch prev
                  if self.current_index > 0 {
                       if let ImageSlot::MetadataLoaded(prev) = &self.images[self.current_index - 1] {
-                          if self.cache.get_image(&prev.path).is_none() {
+                          if self.cache.get_image(&prev.path).is_none() && !self.pending.contains(&prev.path) {
+                               self.pending.insert(prev.path.clone());
                                self.loader.request_image(prev.path.clone(), prev.format);
                           }
                       }
@@ -732,6 +749,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::ImagePixelsLoaded(path, image) => {
+                self.pending.remove(&path);
                 self.cache.insert_image(path.clone(), image);
                 if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                     if item.path == path {
@@ -740,15 +758,14 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::ThumbnailLoaded(path, thumb) => {
+                self.pending.remove(&path);
                 self.cache.insert_thumbnail(path, thumb);
                  if self.grid_mode {
                      self.window.as_ref().unwrap().request_redraw();
                  }
             }
-            AppEvent::LoadError(_path, _err) => {
-                // Optionally mark the slot as error?
-                // But we don't know the index easily without searching.
-                // For now, logging to stderr is enough or handling it in status bar if current
+            AppEvent::LoadError(path, _err) => {
+                self.pending.remove(&path);
             }
         }
     }

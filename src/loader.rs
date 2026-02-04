@@ -5,10 +5,11 @@ use image::{AnimationDecoder, ImageReader, ImageBuffer, Rgba};
 use memmap2::Mmap;
 use rayon::prelude::*;
 use resvg::usvg::{self, Options, Tree};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
 use std::time::Duration;
 use tiny_skia::Pixmap;
@@ -134,19 +135,26 @@ pub enum LoadRequest {
 
 pub struct Loader {
     urgent_tx: Sender<LoadRequest>,
-    background_tx: Sender<LoadRequest>,
+    background_stack: Arc<(Mutex<VecDeque<LoadRequest>>, Condvar)>,
 }
 
 impl Loader {
     pub fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
         let (urgent_tx, urgent_rx) = unbounded();
-        let (background_tx, background_rx) = unbounded();
+        let background_stack = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
         
-        thread::spawn(move || worker_loop(urgent_rx, background_rx, proxy));
+        // Spawn multiple workers (e.g., based on CPU count)
+        let num_workers = (num_cpus::get() / 2).max(1);
+        for _ in 0..num_workers {
+            let u_rx = urgent_rx.clone();
+            let b_stack = background_stack.clone();
+            let p = proxy.clone();
+            thread::spawn(move || worker_loop(u_rx, b_stack, p));
+        }
         
         Self {
             urgent_tx,
-            background_tx,
+            background_stack,
         }
     }
     
@@ -155,43 +163,120 @@ impl Loader {
     }
     
     pub fn request_thumbnail(&self, path: PathBuf, format: ImageFormat, size: u32) {
-        let _ = self.background_tx.send(LoadRequest::LoadThumbnail(path, format, size));
+        let (lock, cvar) = &*self.background_stack;
+        let mut stack = lock.lock().unwrap();
+        
+        // LIFO: Push to the front so the newest scroll target is handled first
+        stack.push_front(LoadRequest::LoadThumbnail(path, format, size));
+        
+        // Optional: If the stack gets too huge (e.g. > 200), drop the oldest requests
+        // Removing from the back drops the oldest (least priority) items
+        if stack.len() > 200 { 
+            stack.pop_back(); 
+        }
+        
+        cvar.notify_one();
     }
 }
 
-fn worker_loop(urgent_rx: Receiver<LoadRequest>, background_rx: Receiver<LoadRequest>, proxy: EventLoopProxy<AppEvent>) {
+fn worker_loop(
+    urgent_rx: Receiver<LoadRequest>,
+    background_stack: Arc<(Mutex<VecDeque<LoadRequest>>, Condvar)>,
+    proxy: EventLoopProxy<AppEvent>
+) {
     loop {
         // Strict priority: check urgent first
-        let req = if let Ok(req) = urgent_rx.try_recv() {
-            req
-        } else {
-            // If no urgent, block on either
-            crossbeam_channel::select! {
-                recv(urgent_rx) -> req => req.ok(),
-                recv(background_rx) -> req => req.ok(),
-            }
-            .unwrap() // Simplified panic handling
-        };
+        if let Ok(req) = urgent_rx.try_recv() {
+            process_request(req, &proxy);
+            continue;
+        }
+
+        // If no urgent, check stack or block on urgent
+        // We need to wait on either urgent_rx or the condition variable.
+        // Since we can't easily select on cvar and channel, we can do a blocking check with a timeout or just prioritize loop.
+        // A better approach for mixed signals is polling or a unified signal mechanism, but here is a simple hybrid:
         
-        match req {
-            LoadRequest::LoadImage(path, format) => {
-                match load_full_image(&path, format) {
-                    Ok(img) => {
-                        let _ = proxy.send_event(AppEvent::ImagePixelsLoaded(path, Arc::new(img)));
-                    }
-                    Err(e) => {
-                        let _ = proxy.send_event(AppEvent::LoadError(path, e));
-                    }
+        // Check stack under lock
+        let req = {
+            let (lock, _cvar) = &*background_stack;
+            let mut stack = lock.lock().unwrap();
+            stack.pop_front()
+        };
+
+        if let Some(req) = req {
+            process_request(req, &proxy);
+        } else {
+             // Stack is empty. Wait for urgent or stack signal.
+             // We use select! with a short timeout or rely on channel blocking if we can't wait on cvar easily.
+             // However, `crossbeam_channel::select!` doesn't support Condvar.
+             // To properly sleep, we should wait on the Condvar BUT also be wakeable by urgent_rx.
+             // This is tricky.
+             // Simplification: Wait on urgent_rx with a timeout, then check stack again?
+             // OR: Since we have multiple workers, maybe just block on the stack if urgent is empty?
+             // But urgent messages must wake us up.
+             
+             // Alternative: We can just use a short sleep or loop.
+             // Better yet: Just block on urgent_rx if stack is empty?
+             // No, because stack might get items.
+             
+             // Correct implementation with mixed sources usually requires a "Wakeup" message on the urgent channel
+             // whenever something is added to the stack, OR a unified channel.
+             // But we want LIFO for stack.
+             
+             // Let's use a small timeout on urgent_rx.recv_timeout. If it times out, we check the stack.
+             // To properly wait on stack, we would need to hold the lock and wait on cvar.
+             
+             // Implementation choice:
+             // 1. Try recv urgent (non-blocking) -> handled above.
+             // 2. If stack empty, block on urgent_rx (indefinitely? No, what if stack gets item?).
+             //    Wait, stack items come from `request_thumbnail` which notifies cvar.
+             
+             // Refined logic:
+             // We iterate.
+             // 1. Check urgent. If found, process.
+             // 2. Check stack. If found, process.
+             // 3. If both empty, we need to sleep until either happens.
+             //    This is hard without a unified primitive.
+             //    Let's compromise: Use `recv_timeout` on urgent. If timeout, check stack with `wait_timeout`.
+             
+             match urgent_rx.recv_timeout(Duration::from_millis(10)) {
+                 Ok(req) => process_request(req, &proxy),
+                 Err(_) => {
+                     // Check stack again, if empty wait on cvar with timeout (to allow checking urgent again)
+                     let (lock, cvar) = &*background_stack;
+                     let mut stack = lock.lock().unwrap();
+                     if let Some(req) = stack.pop_front() {
+                         drop(stack);
+                         process_request(req, &proxy);
+                     } else {
+                         // Wait for notification or timeout to check urgent again
+                         let _ = cvar.wait_timeout(stack, Duration::from_millis(50)).unwrap();
+                     }
+                 }
+             }
+        }
+    }
+}
+
+fn process_request(req: LoadRequest, proxy: &EventLoopProxy<AppEvent>) {
+    match req {
+        LoadRequest::LoadImage(path, format) => {
+            match load_full_image(&path, format) {
+                Ok(img) => {
+                    let _ = proxy.send_event(AppEvent::ImagePixelsLoaded(path, Arc::new(img)));
+                }
+                Err(e) => {
+                    let _ = proxy.send_event(AppEvent::LoadError(path, e));
                 }
             }
-            LoadRequest::LoadThumbnail(path, format, size) => {
-                 match load_thumbnail(&path, format, size) {
-                    Ok(thumb) => {
-                        let _ = proxy.send_event(AppEvent::ThumbnailLoaded(path, Arc::new(thumb)));
-                    }
-                    Err(_) => {
-                        // Silently fail or send error
-                    }
+        }
+        LoadRequest::LoadThumbnail(path, format, size) => {
+             match load_thumbnail(&path, format, size) {
+                Ok(thumb) => {
+                    let _ = proxy.send_event(AppEvent::ThumbnailLoaded(path, Arc::new(thumb)));
+                }
+                Err(_) => {
+                    let _ = proxy.send_event(AppEvent::LoadError(path, "Thumbnail Error".to_string()));
                 }
             }
         }
