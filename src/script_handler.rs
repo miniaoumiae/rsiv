@@ -73,10 +73,15 @@ impl App {
             }
         }) {
             if let Ok(format) = crate::loader::identify_format(&path_buf) {
-                 if let Ok((width, height)) = crate::loader::probe_image(&path_buf, format) {
-                      let item = ImageItem { path: path_buf.clone(), width, height, format };
-                      self.images[idx] = ImageSlot::MetadataLoaded(item);
-                 }
+                if let Ok((width, height)) = crate::loader::probe_image(&path_buf, format) {
+                    let item = ImageItem {
+                        path: path_buf.clone(),
+                        width,
+                        height,
+                        format,
+                    };
+                    self.images[idx] = ImageSlot::MetadataLoaded(item);
+                }
             }
         }
     }
@@ -114,3 +119,4 @@ impl App {
         }
     }
 }
+

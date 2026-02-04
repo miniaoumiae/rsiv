@@ -84,7 +84,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(images: Vec<ImageSlot>, start_in_grid_mode: bool, proxy: EventLoopProxy<AppEvent>) -> Self {
+    pub fn new(
+        images: Vec<ImageSlot>,
+        start_in_grid_mode: bool,
+        proxy: EventLoopProxy<AppEvent>,
+    ) -> Self {
         let config = crate::config::AppConfig::get();
 
         Self {
@@ -96,7 +100,10 @@ impl App {
             window: None,
             pixels: None,
             loader: Loader::new(proxy),
-            cache: CacheManager::new(8, 200), // Limits: 8 full images, 200 thumbs
+            cache: CacheManager::new(
+                config.options.image_cache_size,
+                config.options.thumb_cache_size,
+            ),
             pending: HashSet::new(),
             current_frame_index: 0,
             is_playing: true,
@@ -173,6 +180,41 @@ impl App {
         self.is_playing = true;
     }
 
+    fn mutate_current_image<F>(&mut self, f: F) -> bool
+    where
+        F: FnOnce(&mut crate::image_item::LoadedImage) -> bool,
+    {
+        let Some(ImageSlot::MetadataLoaded(item)) = self.images.get_mut(self.current_index) else {
+            return false;
+        };
+
+        // Get the pixels from cache
+        if let Some(arc_image) = self.cache.image_cache.get(&item.path) {
+            // Clone the Arc so we can mutate the inner data (Copy-on-Write)
+            let mut loaded_image = (**arc_image).clone();
+
+            // Apply the transformation
+            let dimensions_changed = f(&mut loaded_image);
+
+            // If rotation happened, update the metadata dimensions
+            if dimensions_changed {
+                item.width = loaded_image.width;
+                item.height = loaded_image.height;
+            }
+
+            // Update the Cache with new pixels
+            let path = item.path.clone();
+            self.cache
+                .insert_image(path.clone(), Arc::new(loaded_image));
+
+            // IMPORTANT: Invalidate the thumbnail so it gets re-generated correctly
+            self.cache.thumb_cache.pop(&path);
+
+            return true;
+        }
+        false
+    }
+
     fn handle_navigation_action(&mut self, action: Action) -> bool {
         let mut needs_redraw = false;
         match action {
@@ -210,7 +252,10 @@ impl App {
                     for i in 1..self.images.len() {
                         let idx = (self.current_index + i) % self.images.len();
                         if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
-                            if self.marked_files.contains(&item.path.to_string_lossy().to_string()) {
+                            if self
+                                .marked_files
+                                .contains(&item.path.to_string_lossy().to_string())
+                            {
                                 self.current_index = idx;
                                 self.reset_view_for_new_image();
                                 needs_redraw = true;
@@ -225,7 +270,10 @@ impl App {
                     for i in 1..self.images.len() {
                         let idx = (self.current_index + self.images.len() - i) % self.images.len();
                         if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
-                             if self.marked_files.contains(&item.path.to_string_lossy().to_string()) {
+                            if self
+                                .marked_files
+                                .contains(&item.path.to_string_lossy().to_string())
+                            {
                                 self.current_index = idx;
                                 self.reset_view_for_new_image();
                                 needs_redraw = true;
@@ -392,7 +440,8 @@ impl App {
             Action::RemoveImage => {
                 if !self.images.is_empty() {
                     if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                        self.marked_files.remove(&item.path.to_string_lossy().to_string());
+                        self.marked_files
+                            .remove(&item.path.to_string_lossy().to_string());
                     }
                     self.images.remove(self.current_index);
                     if self.images.is_empty() {
@@ -407,7 +456,7 @@ impl App {
             Action::ToggleMarks => {
                 for item_slot in &self.images {
                     if let ImageSlot::MetadataLoaded(item) = item_slot {
-                         let path = item.path.to_string_lossy().to_string();
+                        let path = item.path.to_string_lossy().to_string();
                         if !self.marked_files.remove(&path) {
                             self.marked_files.insert(path);
                         }
@@ -419,15 +468,35 @@ impl App {
                 self.marked_files.clear();
                 needs_redraw = true;
             }
-            // Temporarily disabled edits in this refactor
             Action::RotateCW => {
-                 // Needs to modify LoadedImage in cache or update metadata
+                needs_redraw = self.mutate_current_image(|img| {
+                    img.rotate(true);
+                    true // dimensions changed
+                });
+                if needs_redraw {
+                    self.reset_view_for_new_image();
+                }
             }
             Action::RotateCCW => {
+                needs_redraw = self.mutate_current_image(|img| {
+                    img.rotate(false);
+                    true // dimensions changed
+                });
+                if needs_redraw {
+                    self.reset_view_for_new_image();
+                }
             }
             Action::FlipHorizontal => {
+                needs_redraw = self.mutate_current_image(|img| {
+                    img.flip_horizontal();
+                    false // dimensions didn't change
+                });
             }
             Action::FlipVertical => {
+                needs_redraw = self.mutate_current_image(|img| {
+                    img.flip_vertical();
+                    false // dimensions didn't change
+                });
             }
             _ => {}
         }
@@ -461,81 +530,92 @@ impl App {
         if self.images.is_empty() {
             return;
         }
-        
+
         // --- 1. Request Logic (Pull Architecture) ---
         if self.grid_mode {
-             if let Some(w) = &self.window {
+            if let Some(w) = &self.window {
                 let config = crate::config::AppConfig::get();
                 let cell_size = config.options.thumbnail_size + config.options.grid_pading;
                 let buf_w = w.inner_size().width;
                 let buf_h = w.inner_size().height; // Approximate
                 let cols = (buf_w / cell_size).max(1);
-                
+
                 // Calculate visible rows
                 // We need to know the scroll_y which is computed in draw_grid based on current_index
                 // For now, let's replicate the logic or approximate it.
                 // In draw_grid:
                 // let current_row = (selected_idx as u32) / cols;
                 // let scroll_y = if current_row * cell_size > buf_h as u32 / 2 { ... }
-                
+
                 let current_row = (self.current_index as u32) / cols;
                 let scroll_y = if current_row * cell_size > buf_h / 2 {
                     (current_row * cell_size) as i32 - (buf_h as i32 / 2) + (cell_size as i32 / 2)
                 } else {
                     0
                 };
-                
+
                 let start_row = scroll_y.max(0) as u32 / cell_size;
                 let rows_visible = (buf_h / cell_size) + 2;
-                
+
                 let start_idx = (start_row * cols) as usize;
                 let end_idx = ((start_row + rows_visible) * cols) as usize;
                 let end_idx = end_idx.min(self.images.len());
-                
+
                 for i in start_idx..end_idx {
-                     if let ImageSlot::MetadataLoaded(item) = &self.images[i] {
-                         // Check cache & pending
-                         if self.cache.get_thumbnail(&item.path).is_none() && !self.pending.contains(&item.path) {
-                             self.pending.insert(item.path.clone());
-                             // Request load
-                             self.loader.request_thumbnail(item.path.clone(), item.format, config.options.thumbnail_size);
-                         }
-                     }
+                    if let ImageSlot::MetadataLoaded(item) = &self.images[i] {
+                        // Check cache & pending
+                        if self.cache.get_thumbnail(&item.path).is_none()
+                            && !self.pending.contains(&item.path)
+                        {
+                            self.pending.insert(item.path.clone());
+                            // Request load
+                            self.loader.request_thumbnail(
+                                item.path.clone(),
+                                item.format,
+                                config.options.thumbnail_size,
+                            );
+                        }
+                    }
                 }
             }
         } else {
-             // Single view
-             if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                 if self.cache.get_image(&item.path).is_none() && !self.pending.contains(&item.path) {
-                     self.pending.insert(item.path.clone());
-                     self.loader.request_image(item.path.clone(), item.format);
-                 }
-                 
-                 // Pre-fetch next
-                 if self.current_index + 1 < self.images.len() {
-                      if let ImageSlot::MetadataLoaded(next) = &self.images[self.current_index + 1] {
-                          if self.cache.get_image(&next.path).is_none() && !self.pending.contains(&next.path) {
-                               self.pending.insert(next.path.clone());
-                               self.loader.request_image(next.path.clone(), next.format);
-                          }
-                      }
-                 }
-                  // Pre-fetch prev
-                 if self.current_index > 0 {
-                      if let ImageSlot::MetadataLoaded(prev) = &self.images[self.current_index - 1] {
-                          if self.cache.get_image(&prev.path).is_none() && !self.pending.contains(&prev.path) {
-                               self.pending.insert(prev.path.clone());
-                               self.loader.request_image(prev.path.clone(), prev.format);
-                          }
-                      }
-                 }
-             }
+            // Single view
+            if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                if self.cache.get_image(&item.path).is_none() && !self.pending.contains(&item.path)
+                {
+                    self.pending.insert(item.path.clone());
+                    self.loader.request_image(item.path.clone(), item.format);
+                }
+
+                // Pre-fetch next
+                if self.current_index + 1 < self.images.len() {
+                    if let ImageSlot::MetadataLoaded(next) = &self.images[self.current_index + 1] {
+                        if self.cache.get_image(&next.path).is_none()
+                            && !self.pending.contains(&next.path)
+                        {
+                            self.pending.insert(next.path.clone());
+                            self.loader.request_image(next.path.clone(), next.format);
+                        }
+                    }
+                }
+                // Pre-fetch prev
+                if self.current_index > 0 {
+                    if let ImageSlot::MetadataLoaded(prev) = &self.images[self.current_index - 1] {
+                        if self.cache.get_image(&prev.path).is_none()
+                            && !self.pending.contains(&prev.path)
+                        {
+                            self.pending.insert(prev.path.clone());
+                            self.loader.request_image(prev.path.clone(), prev.format);
+                        }
+                    }
+                }
+            }
         }
 
-        // --- 2. Animation ---
+        // Animation
         if !self.grid_mode {
             if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                 if let Some(loaded_image) = self.cache.get_image(&item.path) {
+                if let Some(loaded_image) = self.cache.get_image(&item.path) {
                     let now = Instant::now();
                     let dt = now.duration_since(self.last_update);
                     self.last_update = now;
@@ -563,7 +643,7 @@ impl App {
             }
         }
 
-        // --- 3. Draw ---
+        // Draw
         let scale = self.get_current_scale();
         let Some(pixels) = &mut self.pixels else {
             return;
@@ -632,8 +712,10 @@ impl App {
 
             match &self.images[self.current_index] {
                 ImageSlot::MetadataLoaded(item) => {
-                    let is_marked = self.marked_files.contains(&item.path.to_string_lossy().to_string());
-                    
+                    let is_marked = self
+                        .marked_files
+                        .contains(&item.path.to_string_lossy().to_string());
+
                     // Check if pixels are actually loaded for the status text
                     let is_loaded = self.cache.get_image(&item.path).is_some();
 
@@ -652,7 +734,7 @@ impl App {
                             &self.input_mode,
                         );
                     } else {
-                         self.status_bar.draw(
+                        self.status_bar.draw(
                             &mut fb,
                             0,
                             self.current_index + 1,
@@ -753,16 +835,16 @@ impl ApplicationHandler<AppEvent> for App {
                 self.cache.insert_image(path.clone(), image);
                 if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                     if item.path == path {
-                         self.window.as_ref().unwrap().request_redraw();
+                        self.window.as_ref().unwrap().request_redraw();
                     }
                 }
             }
             AppEvent::ThumbnailLoaded(path, thumb) => {
                 self.pending.remove(&path);
                 self.cache.insert_thumbnail(path, thumb);
-                 if self.grid_mode {
-                     self.window.as_ref().unwrap().request_redraw();
-                 }
+                if self.grid_mode {
+                    self.window.as_ref().unwrap().request_redraw();
+                }
             }
             AppEvent::LoadError(path, _err) => {
                 self.pending.remove(&path);
@@ -879,9 +961,9 @@ impl ApplicationHandler<AppEvent> for App {
                     }
 
                     if needs_redraw {
-                         if let Some(w) = &self.window {
-                             w.request_redraw();
-                         }
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
                     }
                 }
             }
@@ -889,3 +971,4 @@ impl ApplicationHandler<AppEvent> for App {
         }
     }
 }
+

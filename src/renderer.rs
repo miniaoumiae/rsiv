@@ -1,6 +1,7 @@
-use crate::image_item::{ImageSlot, LoadedImage};
 use crate::cache::CacheManager;
+use crate::image_item::{ImageSlot, LoadedImage};
 use rayon::prelude::*;
+
 
 pub struct GridColors {
     pub bg: (u8, u8, u8),
@@ -18,6 +19,7 @@ pub struct DrawImageParams<'a> {
     pub off_y: i32,
 }
 
+#[derive(Clone, Copy)]
 struct Rect(i32, i32, i32, i32);
 
 pub fn clear(frame: &mut [u8], color: (u8, u8, u8)) {
@@ -57,12 +59,12 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
     let inv_scale = 1.0 / scale;
     let src_width = image.width as i32;
     let src_height = image.height as i32;
-    
+
     // Safety check for empty frames
     if image.frames.is_empty() {
         return;
     }
-    
+
     // Safety check for frame index
     let safe_frame_idx = frame_idx % image.frames.len();
     let current_pixels = &image.frames[safe_frame_idx].pixels;
@@ -155,156 +157,254 @@ pub fn draw_grid(
 
     clear(frame, colors.bg);
 
-    // Iterating with index to map to grid positions
-    // Note: We cannot easily parallelize this if we need mutable access to CacheManager for LruCache promotion
-    // However, LruCache::get requires mut.
-    // So we run sequentially.
-    for (i, slot) in images.iter().enumerate() {
-        let col = (i as u32) % cols;
-        let row = (i as u32) / cols;
+    // 1. GATHER: Collect all draw commands sequentially (satisfies LRU mutability)
+    let draw_commands: Vec<_> = images
+        .iter()
+        .enumerate()
+        .filter_map(|(i, slot)| {
+            let col = (i as u32) % cols;
+            let row = (i as u32) / cols;
 
-        let x_cell = (margin_x + col * cell_size) as i32;
-        let y_cell = (row * cell_size + padding / 2) as i32 - scroll_y;
+            let x_cell = (margin_x + col * cell_size) as i32;
+            let y_cell = (row * cell_size + padding / 2) as i32 - scroll_y;
 
-        if y_cell + (cell_size as i32) < 0 || y_cell > buf_h {
-            continue;
-        }
+            if y_cell + (cell_size as i32) < 0 || y_cell > buf_h {
+                return None;
+            }
 
-        let p_size = thumb_size as i32;
-        let t_x = x_cell + (thumb_size as i32 - p_size) / 2;
-        let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
-        
-        let mut drawn = false;
+            let p_size = thumb_size as i32;
+            let t_x = x_cell + (thumb_size as i32 - p_size) / 2;
+            let t_y = y_cell + (thumb_size as i32 - p_size) / 2;
 
-        if let ImageSlot::MetadataLoaded(item) = slot {
-             if let Some(thumb_data) = cache.get_thumbnail(&item.path) {
-                 let (t_w, t_h, pixels) = &*thumb_data;
-                 let t_w = *t_w;
-                 let t_h = *t_h;
-                 
-                 let t_x = x_cell + (thumb_size as i32 - t_w as i32) / 2;
-                 let t_y = y_cell + (thumb_size as i32 - t_h as i32) / 2;
+            let is_selected = i == selected_idx;
+            
+            // Check cache (mut access here is safe because we are single-threaded in this phase)
+            if let ImageSlot::MetadataLoaded(item) = slot {
+                let is_marked = marked_paths.contains(&item.path.to_string_lossy().to_string());
+                let thumb_data = cache.get_thumbnail(&item.path);
+                Some((x_cell, y_cell, t_x, t_y, thumb_data, is_selected, is_marked, ImageSlot::MetadataLoaded(item.clone())))
+            } else {
+                 // For loading/error slots
+                 Some((x_cell, y_cell, t_x, t_y, None, is_selected, false, slot.clone()))
+            }
+        })
+        .collect();
 
-                 for row_idx in 0..t_h {
-                    let dest_y = t_y + row_idx as i32;
-                    if dest_y >= 0 && dest_y < buf_h {
+    // 2. DRAW: Execute commands in parallel (read-only access to Arc data)
+    // We cannot easily parallelize the writing to the single 'frame' buffer without
+    // potentially overlapping writes or sophisticated unsafe code, because
+    // the thumbs can be arbitrarily positioned.
+    // However, if we know they don't overlap (grid), we could use chunks.
+    // But `frame` is a single slice.
+    //
+    // Rayon's `par_iter` doesn't help if we all write to `frame`.
+    // We need `frame` to be splittable. It isn't easily splittable by grid cells 
+    // because rows are contiguous in memory but grid cells are not (they span multiple rows).
+    //
+    // The previous implementation of `draw_image` used `par_chunks_exact_mut` (splitting by rows).
+    // We can do the same here! We can iterate over the ROWS of the entire buffer in parallel,
+    // and for each row, find which thumbnails intersect it and draw the relevant pixels.
+    // This is the "Scanline" approach.
+    
+    // Scanline approach:
+    // Iterate over all rows in 'frame' in parallel.
+    // For each row y:
+    //   Determine which grid items intersect this row.
+    //   Draw the pixels for those items.
+    
+    // We can re-use the calculated positions from step 1.
+    // Optimization: Sort draw_commands by y to quickly find intersections?
+    // Or just iterate them all since there are usually < 50 visible?
+    // 50 items per row is fast enough.
+    
+    let p_size = thumb_size as i32;
+    
+    frame
+        .par_chunks_exact_mut((buf_w * 4) as usize)
+        .enumerate()
+        .for_each(|(y, row_pixels)| {
+            let y = y as i32;
+            
+            // For each visible thumbnail...
+            for (x_cell, y_cell, base_t_x, base_t_y, thumb_data, is_selected, is_marked, slot) in &draw_commands {
+                
+                // --- 1. Draw Thumbnail Pixels ---
+                if let Some(data) = thumb_data {
+                    let (t_w, t_h, pixels) = &**data;
+                    let t_w = *t_w as i32;
+                    let t_h = *t_h as i32;
+                    
+                    // Re-calculate specific centered position for this thumb
+                    let t_x = x_cell + (thumb_size as i32 - t_w) / 2;
+                    let t_y = y_cell + (thumb_size as i32 - t_h) / 2;
+                    
+                    // Does this row intersect the thumbnail image?
+                    if y >= t_y && y < t_y + t_h {
+                        let row_idx = y - t_y; // 0..t_h
+                        
+                        // Bounds check x
+                        // We copy a slice of the source row to the dest row
+                        
                         let src_row_start = (row_idx * t_w) as usize * 4;
-                        let dest_row_start = (dest_y * buf_w + t_x) as usize * 4;
-                        let row_len = (t_w as usize).min((buf_w - t_x).max(0) as usize) * 4;
-
-                        if src_row_start + row_len <= pixels.len()
-                            && dest_row_start + row_len <= frame.len()
-                            && t_x >= 0
-                        {
-                            let src_slice = &pixels[src_row_start..src_row_start + row_len];
-                            let dest_slice = &mut frame[dest_row_start..dest_row_start + row_len];
-
-                            for (src_chunk, dest_chunk) in src_slice
-                                .chunks_exact(4)
-                                .zip(dest_slice.chunks_exact_mut(4))
-                            {
-                                let src_a = src_chunk[3] as u32;
-                                if src_a == 255 {
-                                    dest_chunk.copy_from_slice(src_chunk);
-                                } else if src_a > 0 {
-                                    let inv_a = 255 - src_a;
-                                    dest_chunk[0] = ((src_chunk[0] as u32 * src_a
-                                        + dest_chunk[0] as u32 * inv_a)
-                                        / 255) as u8;
-                                    dest_chunk[1] = ((src_chunk[1] as u32 * src_a
-                                        + dest_chunk[1] as u32 * inv_a)
-                                        / 255) as u8;
-                                    dest_chunk[2] = ((src_chunk[2] as u32 * src_a
-                                        + dest_chunk[2] as u32 * inv_a)
-                                        / 255) as u8;
-                                    dest_chunk[3] = 255;
-                                }
-                            }
+                        // t_x could be negative if window is tiny? unlikely but possible.
+                        let dest_x_start = t_x.max(0);
+                        let dest_x_end = (t_x + t_w).min(buf_w);
+                        
+                        if dest_x_end > dest_x_start {
+                             // Offset into the source buffer
+                             let src_offset_x = (dest_x_start - t_x) as usize * 4;
+                             let copy_len = (dest_x_end - dest_x_start) as usize * 4;
+                             
+                             let dest_row_start = (dest_x_start as usize) * 4;
+                             
+                             if src_row_start + src_offset_x + copy_len <= pixels.len() && dest_row_start + copy_len <= row_pixels.len() {
+                                 let src_slice = &pixels[src_row_start + src_offset_x .. src_row_start + src_offset_x + copy_len];
+                                 let dest_slice = &mut row_pixels[dest_row_start .. dest_row_start + copy_len];
+                                 
+                                 for (src_chunk, dest_chunk) in src_slice.chunks_exact(4).zip(dest_slice.chunks_exact_mut(4)) {
+                                     let src_a = src_chunk[3] as u32;
+                                     if src_a == 255 {
+                                         dest_chunk.copy_from_slice(src_chunk);
+                                     } else if src_a > 0 {
+                                         // Blend
+                                         let inv_a = 255 - src_a;
+                                         dest_chunk[0] = ((src_chunk[0] as u32 * src_a + dest_chunk[0] as u32 * inv_a) / 255) as u8;
+                                         dest_chunk[1] = ((src_chunk[1] as u32 * src_a + dest_chunk[1] as u32 * inv_a) / 255) as u8;
+                                         dest_chunk[2] = ((src_chunk[2] as u32 * src_a + dest_chunk[2] as u32 * inv_a) / 255) as u8;
+                                         dest_chunk[3] = 255;
+                                     }
+                                 }
+                             }
                         }
                     }
+                } else {
+                     // Draw placeholder (Loading/Error)
+                     // Box is at base_t_x, base_t_y with size p_size
+                     // This is just a border, so we check if y intersects the top/bottom lines, or if x intersects left/right
+                     // But here we are iterating y.
+                     // The `draw_border` function was random access. We need scanline border drawing.
+                     //
+                     // Rect: x, y, w, h
+                     // Border exists at:
+                     // y in [y, y+thickness) AND x in [x, x+w)
+                     // y in [y+h-thickness, y+h) AND x in [x, x+w)
+                     // y in [y, y+h) AND x in [x, x+thickness)
+                     // y in [y, y+h) AND x in [x+w-thickness, x+w)
+                     
+                     let color = match slot {
+                        ImageSlot::Error(_) => colors.error,
+                        _ => colors.loading,
+                     };
+                     draw_border_scanline(row_pixels, y, buf_w, Rect(*base_t_x, *base_t_y, p_size, p_size), color);
                 }
-                drawn = true;
                 
-                if marked_paths.contains(&item.path.to_string_lossy().to_string()) {
+                // --- 2. Draw Selection Border ---
+                if *is_selected {
+                    let border_gap = 1;
+                    let thickness = 4;
+                    let offset = border_gap + thickness;
+                    // Note: If loaded, the rect depends on actual size (t_w, t_h). 
+                    // To keep it simple and consistent with old code, we used `p_size` for selection if not loaded?
+                    // Actually old code used t_w/t_h if loaded.
+                    
+                    let (target_w, target_h, target_x, target_y) = if let Some(data) = thumb_data {
+                        let (t_w, t_h, _) = &**data;
+                         let t_x = x_cell + (thumb_size as i32 - *t_w as i32) / 2;
+                         let t_y = y_cell + (thumb_size as i32 - *t_h as i32) / 2;
+                        (*t_w as i32, *t_h as i32, t_x, t_y)
+                    } else {
+                        (p_size, p_size, *base_t_x, *base_t_y)
+                    };
+                    
+                    draw_border_scanline(
+                        row_pixels, 
+                        y, 
+                        buf_w, 
+                        Rect(target_x - offset, target_y - offset, target_w + offset * 2, target_h + offset * 2), 
+                        colors.accent
+                    );
+                }
+                
+                // --- 3. Draw Mark ---
+                if *is_marked {
+                     // Mark is a small box at bottom right
+                     let (target_w, target_h, target_x, target_y) = if let Some(data) = thumb_data {
+                         let (t_w, t_h, _) = &**data;
+                         let t_x = x_cell + (thumb_size as i32 - *t_w as i32) / 2;
+                         let t_y = y_cell + (thumb_size as i32 - *t_h as i32) / 2;
+                        (*t_w as i32, *t_h as i32, t_x, t_y)
+                    } else {
+                        // Don't draw mark if not loaded? Old code only checked ImageSlot::Loaded.
+                        // But we put is_marked false for others in gather step.
+                        // Actually gather step checks MetadataLoaded, so we might have it even if no thumb.
+                        // Let's assume we use p_size if no thumb data.
+                        (p_size, p_size, *base_t_x, *base_t_y)
+                    };
+                    
                     let mark_size = 12;
                     let border_gap = 1;
                     let thickness = 4;
-                    let m_x = t_x + t_w as i32 + border_gap + thickness / 2 - mark_size / 2;
-                    let m_y = t_y + t_h as i32 + border_gap + thickness / 2 - mark_size / 2;
+                    let m_x = target_x + target_w + border_gap + thickness / 2 - mark_size / 2;
+                    let m_y = target_y + target_h + border_gap + thickness / 2 - mark_size / 2;
                     
-                     for dy in 0..mark_size {
-                        for dx in 0..mark_size {
-                            let px = m_x + dx;
-                            let py = m_y + dy;
-                            if px >= 0 && px < buf_w && py >= 0 && py < buf_h {
-                                let idx = ((py * buf_w + px) * 4) as usize;
-                                if idx + 4 <= frame.len() {
-                                    frame[idx] = colors.mark.0;
-                                    frame[idx + 1] = colors.mark.1;
-                                    frame[idx + 2] = colors.mark.2;
-                                    frame[idx + 3] = 255;
-                                }
+                    if y >= m_y && y < m_y + mark_size {
+                        let start_draw_x = m_x.max(0);
+                        let end_draw_x = (m_x + mark_size).min(buf_w);
+                        
+                        for x in start_draw_x..end_draw_x {
+                            let idx = (x as usize) * 4;
+                            if idx + 4 <= row_pixels.len() {
+                                row_pixels[idx] = colors.mark.0;
+                                row_pixels[idx+1] = colors.mark.1;
+                                row_pixels[idx+2] = colors.mark.2;
+                                row_pixels[idx+3] = 255;
                             }
                         }
                     }
                 }
             }
-        }
-
-        if !drawn {
-            let color = match slot {
-                ImageSlot::Error(_) => colors.error,
-                _ => colors.loading,
-            };
-            draw_border(frame, buf_w, buf_h, Rect(t_x, t_y, p_size, p_size), color);
-        }
-
-        if i == selected_idx {
-            let border_gap = 1;
-            let thickness = 4;
-            let offset = border_gap + thickness;
-            // Draw border around the theoretical thumbnail box (p_size)
-            // Or the actual one? Using p_size makes it consistent even if loading.
-            draw_border(
-                frame,
-                buf_w,
-                buf_h,
-                Rect(
-                    t_x - offset,
-                    t_y - offset,
-                    p_size + offset * 2,
-                    p_size + offset * 2,
-                ),
-                colors.accent,
-            );
-        }
-    }
+        });
 }
 
-fn draw_border(frame: &mut [u8], buf_w: i32, buf_h: i32, rect: Rect, color: (u8, u8, u8)) {
-    let Rect(x, y, w, h) = rect;
+// Optimized helper for scanline rendering
+fn draw_border_scanline(row_pixels: &mut [u8], y: i32, buf_w: i32, rect: Rect, color: (u8, u8, u8)) {
+    let Rect(rx, ry, rw, rh) = rect;
     let thickness = 4;
+    
+    // Check if this row y intersects the border geometry
+    
+    // Top horizontal bar: ry .. ry+thickness
+    let in_top = y >= ry && y < ry + thickness;
+    // Bottom horizontal bar: ry+rh-thickness .. ry+rh
+    let in_bottom = y >= ry + rh - thickness && y < ry + rh;
+    // Middle vertical area: ry .. ry+rh (covers entire height)
+    let in_vertical_range = y >= ry && y < ry + rh;
+    
+    if !in_vertical_range { return; }
+    
     let color_alpha = [color.0, color.1, color.2, 255];
-
-    let mut set_pixel = |x: i32, y: i32| {
-        if x >= 0 && x < buf_w && y >= 0 && y < buf_h {
-            let idx = ((y * buf_w + x) * 4) as usize;
-            if idx + 4 <= frame.len() {
-                frame[idx..idx + 4].copy_from_slice(&color_alpha);
+    
+    let draw_span = |start_x: i32, end_x: i32, pixels: &mut [u8]| {
+        let sx = start_x.max(0);
+        let ex = end_x.min(buf_w);
+        if ex > sx {
+            for x in sx..ex {
+                 let idx = (x as usize) * 4;
+                 if idx + 4 <= pixels.len() {
+                     pixels[idx..idx+4].copy_from_slice(&color_alpha);
+                 }
             }
         }
     };
 
-    for i in 0..thickness {
-        // Top & Bottom
-        for bx in x..(x + w) {
-            set_pixel(bx, y + i);
-            set_pixel(bx, y + h - 1 - i);
-        }
-        // Left & Right
-        for by in y..(y + h) {
-            set_pixel(x + i, by);
-            set_pixel(x + w - 1 - i, by);
-        }
+    if in_top || in_bottom {
+        // Draw the full horizontal line
+        draw_span(rx, rx + rw, row_pixels);
+    } else {
+        // Draw left and right vertical bars
+        // Left: rx .. rx+thickness
+        draw_span(rx, rx + thickness, row_pixels);
+        // Right: rx+rw-thickness .. rx+rw
+        draw_span(rx + rw - thickness, rx + rw, row_pixels);
     }
 }

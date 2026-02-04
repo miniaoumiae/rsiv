@@ -12,8 +12,12 @@ pub struct CacheManager {
 impl CacheManager {
     pub fn new(image_limit: usize, thumb_limit: usize) -> Self {
         Self {
-            image_cache: LruCache::new(NonZeroUsize::new(image_limit).unwrap_or(NonZeroUsize::new(8).unwrap())),
-            thumb_cache: LruCache::new(NonZeroUsize::new(thumb_limit).unwrap_or(NonZeroUsize::new(200).unwrap())),
+            image_cache: LruCache::new(
+                NonZeroUsize::new(image_limit).unwrap_or(NonZeroUsize::new(8).unwrap()),
+            ),
+            thumb_cache: LruCache::new(
+                NonZeroUsize::new(thumb_limit).unwrap_or(NonZeroUsize::new(200).unwrap()),
+            ),
         }
     }
 
@@ -32,7 +36,7 @@ impl CacheManager {
     pub fn insert_thumbnail(&mut self, path: PathBuf, thumb: Arc<(u32, u32, Vec<u8>)>) {
         self.thumb_cache.put(path, thumb);
     }
-    
+
     pub fn clear(&mut self) {
         self.image_cache.clear();
         self.thumb_cache.clear();
