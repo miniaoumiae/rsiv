@@ -233,6 +233,14 @@ Modifiers are specified by adding them before the key, separated by `+`.
 >
 > **Default:** `"Ctrl+x"`
 
+**filter_mode** = string | [string]
+
+> Enters Fuzzy Filter Mode. While in this mode, a / buffer appears in the status bar. As you type, the image list is filtered in real-time using fuzzy matching
+>
+> `"Enter"`: Exits Filter Mode but keeps the current filtered results active.
+> `"Escape"`: Exits Filter Mode and clears the search, restoring the full image list.
+> **Default:** `"/"`
+
 ### View Manipulation
 
 **zoom_in** = `string` | `[string]`

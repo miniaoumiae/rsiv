@@ -310,7 +310,6 @@ fn load_thumbnail(
 }
 
 // Decoding Helpers
-
 fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedImage, String> {
     let opt = Options {
         resources_dir: path_obj.parent().map(|p| p.to_path_buf()),

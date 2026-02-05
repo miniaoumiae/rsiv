@@ -255,7 +255,7 @@ pub fn draw_grid(
                 .iter()
                 .filter(|(ymin, ymax, ..)| y >= *ymin && y < *ymax)
             {
-                // --- 1. Draw Thumbnail Pixels ---
+                // Draw Thumbnail Pixels
                 if let Some(data) = thumb_data {
                     let (t_w, t_h, pixels) = &**data;
                     let t_w = *t_w as i32;

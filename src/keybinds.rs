@@ -43,6 +43,8 @@ pub enum Action {
     GridMoveRight,
     GridMoveUp,
     GridMoveDown,
+    GridMovePageUp,
+    GridMovePageDown,
 
     // Global Toggles / Actions
     ToggleGrid,
@@ -327,6 +329,19 @@ impl Binding {
             &k.view_pan_down.0,
             BindingMode::Grid,
             Action::GridMoveDown,
+        );
+
+        add(
+            &mut bindings,
+            &k.grid_page_up.0,
+            BindingMode::Grid,
+            Action::GridMovePageUp,
+        );
+        add(
+            &mut bindings,
+            &k.grid_page_down.0,
+            BindingMode::Grid,
+            Action::GridMovePageDown,
         );
 
         bindings

@@ -20,6 +20,7 @@
 
 - Native **wayland** (and mac) support.
 - Easy to configure toml file.
+- Built-in real-time fuzzy matching based filtering.
 - Let you choose if you want to apply the handler to the current file or the marked ones (similar to `nnn`).
 
 ## Installation
@@ -125,7 +126,7 @@ You can find the default keybindings there as well.
 - [ ] Config hot reload ?
 - [ ] Images reload on change
 - [x] Memory usage optimization (`[options]`)
-- [ ] Search/Filter mode
+- [x] Search/Filter mode
 
 ## Credits
 
