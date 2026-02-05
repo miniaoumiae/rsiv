@@ -53,6 +53,7 @@ pub enum Action {
     MarkFile,
     RemoveImage,
     ScriptHandlerPrefix,
+    FilterMode,
 }
 
 pub struct Binding {
@@ -156,6 +157,14 @@ impl Binding {
             BindingMode::Global,
             Action::ToggleGrid,
         );
+
+        add(
+            &mut bindings,
+            &k.filter_mode.0,
+            BindingMode::Global,
+            Action::FilterMode,
+        );
+
         add(
             &mut bindings,
             &k.mark_file.0,

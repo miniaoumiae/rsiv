@@ -17,7 +17,6 @@ use walkdir::WalkDir;
 use winit::event_loop::EventLoopProxy;
 
 // Discovery
-
 pub fn identify_format(path: &Path) -> Result<ImageFormat, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut buffer = [0; 1024];
@@ -93,7 +92,7 @@ pub fn spawn_discovery_worker(
         }
         files.sort();
 
-        // 1. Identify Format
+        // Identify Format
         let tasks: Vec<(PathBuf, ImageFormat)> = files
             .into_iter()
             .filter_map(|path| match identify_format(&path) {
@@ -104,7 +103,7 @@ pub fn spawn_discovery_worker(
 
         let _ = proxy.send_event(AppEvent::InitialCount(tasks.len()));
 
-        // 2. Probe Dimensions (Parallel)
+        // Probe Dimensions
         tasks
             .into_par_iter()
             .enumerate()
@@ -127,7 +126,7 @@ pub fn spawn_discovery_worker(
     });
 }
 
-// --- Loading ---
+// Loading
 
 pub enum LoadRequest {
     LoadImage(PathBuf, ImageFormat),

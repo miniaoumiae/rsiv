@@ -138,6 +138,7 @@ impl StatusBar {
             InputMode::AwaitingTarget(_) => {
                 "[Target] (c)urrent/(m)arked? (Esc to cancel)".to_string()
             }
+            InputMode::Filtering => format!("/{}█", path),
         };
 
         // Cache Check

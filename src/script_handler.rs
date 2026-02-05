@@ -116,6 +116,7 @@ impl App {
                 self.input_mode = InputMode::Normal;
             }
             InputMode::Normal => {}
+            InputMode::Filtering => {}
         }
     }
 }

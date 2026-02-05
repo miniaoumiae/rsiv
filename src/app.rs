@@ -46,11 +46,13 @@ pub enum AppEvent {
 #[derive(Debug, PartialEq, Clone)]
 pub enum InputMode {
     Normal,
+    Filtering,
     WaitingForHandler,
     AwaitingTarget(String),
 }
 
 pub struct App {
+    pub all_images: Vec<ImageSlot>,
     pub images: Vec<ImageSlot>,
     pub current_index: usize,
     pub mode: ViewMode,
@@ -58,6 +60,7 @@ pub struct App {
     pub off_y: i32,
     pub window: Option<Arc<Window>>,
     pub pixels: Option<Pixels<'static>>,
+    pub filter_text: String,
 
     // Resources
     pub loader: Loader,
@@ -92,6 +95,7 @@ impl App {
         let config = crate::config::AppConfig::get();
 
         Self {
+            all_images: images.clone(),
             images,
             current_index: 0,
             mode: config.options.default_view,
@@ -99,6 +103,7 @@ impl App {
             off_y: 0,
             window: None,
             pixels: None,
+            filter_text: String::new(),
             loader: Loader::new(proxy),
             cache: CacheManager::new(
                 config.options.image_cache_size,
@@ -745,6 +750,13 @@ impl App {
                     // Check if pixels are actually loaded for the status text
                     let is_loaded = self.cache.get_image(&item.path).is_some();
 
+                    let cow_path = item.path.to_string_lossy();
+                    let display_path = if self.input_mode == InputMode::Filtering {
+                        self.filter_text.as_str()
+                    } else {
+                        cow_path.as_ref()
+                    };
+
                     if is_loaded || self.grid_mode {
                         self.status_bar.draw(
                             &mut fb,
@@ -755,40 +767,56 @@ impl App {
                             },
                             self.current_index + 1,
                             self.images.len(),
-                            &item.path.to_string_lossy(),
+                            display_path,
                             is_marked,
                             &self.input_mode,
                         );
                     } else {
+                        let loading_text = if self.input_mode == InputMode::Filtering {
+                            self.filter_text.as_str()
+                        } else {
+                            "Loading..."
+                        };
                         self.status_bar.draw(
                             &mut fb,
                             0,
                             self.current_index + 1,
                             self.images.len(),
-                            "Loading...",
+                            loading_text,
                             is_marked,
                             &self.input_mode,
                         );
                     }
                 }
                 ImageSlot::Error(err) => {
+                    let error_msg = format!("Error: {}", err);
+                    let display_text = if self.input_mode == InputMode::Filtering {
+                        self.filter_text.as_str()
+                    } else {
+                        error_msg.as_str()
+                    };
                     self.status_bar.draw(
                         &mut fb,
                         0,
                         self.current_index + 1,
                         self.images.len(),
-                        &format!("Error: {}", err),
+                        display_text,
                         false,
                         &self.input_mode,
                     );
                 }
                 ImageSlot::PendingMetadata => {
+                    let display_text = if self.input_mode == InputMode::Filtering {
+                        self.filter_text.as_str()
+                    } else {
+                        "Discovering..."
+                    };
                     self.status_bar.draw(
                         &mut fb,
                         0,
                         self.current_index + 1,
                         self.images.len(),
-                        "Discovering...",
+                        display_text,
                         false,
                         &self.input_mode,
                     );
@@ -834,24 +862,44 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::InitialCount(count) => {
+                self.all_images = vec![ImageSlot::PendingMetadata; count];
                 self.images = vec![ImageSlot::PendingMetadata; count];
             }
             AppEvent::MetadataLoaded(idx, item) => {
-                if let Some(slot) = self.images.get_mut(idx) {
-                    *slot = ImageSlot::MetadataLoaded(item);
+                if let Some(slot) = self.all_images.get_mut(idx) {
+                    *slot = ImageSlot::MetadataLoaded(item.clone());
                 }
+
+                if self.filter_text.is_empty() {
+                    if let Some(slot) = self.images.get_mut(idx) {
+                        *slot = ImageSlot::MetadataLoaded(item);
+                    }
+                } else {
+                    self.apply_filter();
+                }
+
                 if self.current_index == idx {
-                    self.window.as_ref().unwrap().request_redraw();
+                    if let Some(w) = self.window.as_ref() {
+                        w.request_redraw();
+                    }
                 }
             }
             AppEvent::MetadataError(idx, err) => {
+                if let Some(slot) = self.all_images.get_mut(idx) {
+                    *slot = ImageSlot::Error(err.clone());
+                }
                 if let Some(slot) = self.images.get_mut(idx) {
                     *slot = ImageSlot::Error(err);
                 }
             }
             AppEvent::DiscoveryComplete => {
                 self.discovery_complete = true;
-                if self.images.is_empty() {
+
+                let has_valid_images = self.all_images.iter().any(|slot| {
+                    matches!(slot, ImageSlot::MetadataLoaded(_))
+                });
+
+                if !has_valid_images {
                     eprintln!("No images found. Exiting...");
                     _el.exit();
                 }
@@ -904,27 +952,57 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state.is_pressed() {
-                    if self.input_mode != InputMode::Normal {
-                        use winit::keyboard::{Key, NamedKey};
-
-                        let key_to_process = match &event.logical_key {
-                            Key::Named(NamedKey::Escape) => Some("Esc"),
-                            Key::Character(c) => Some(c.as_str()),
-                            _ => None,
-                        };
-
-                        if let Some(k) = key_to_process {
-                            self.handle_modal_input(k);
-                            if let Some(window) = &self.window {
-                                window.request_redraw();
-                            }
-                            return; // Block normal keybindings
-                        }
-                    }
-
-                    let old_scale = self.get_current_scale();
                     let mut needs_redraw = false;
 
+                    // Handle Modal Inputs First
+                    match self.input_mode {
+                        InputMode::WaitingForHandler | InputMode::AwaitingTarget(_) => {
+                            use winit::keyboard::{Key, NamedKey};
+                            let key_to_process = match &event.logical_key {
+                                Key::Named(NamedKey::Escape) => Some("Esc"),
+                                Key::Character(c) => Some(c.as_str()),
+                                _ => None,
+                            };
+
+                            if let Some(k) = key_to_process {
+                                self.handle_modal_input(k);
+                                if let Some(window) = &self.window {
+                                    window.request_redraw();
+                                }
+                                return;
+                            }
+                        }
+                        InputMode::Filtering => {
+                            use winit::keyboard::{Key, NamedKey};
+                            match event.logical_key {
+                                Key::Named(NamedKey::Enter) => {
+                                    self.input_mode = InputMode::Normal;
+                                }
+                                Key::Named(NamedKey::Escape) => {
+                                    self.filter_text.clear();
+                                    self.apply_filter();
+                                    self.input_mode = InputMode::Normal;
+                                }
+                                Key::Named(NamedKey::Backspace) => {
+                                    self.filter_text.pop();
+                                    self.apply_filter();
+                                }
+                                Key::Character(ref c) => {
+                                    self.filter_text.push_str(c);
+                                    self.apply_filter();
+                                }
+                                _ => {}
+                            }
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                            return;
+                        }
+                        InputMode::Normal => {}
+                    }
+
+                    // Handle Standard Keybindings
+                    let old_scale = self.get_current_scale();
                     if let Some(action) = crate::keybinds::Binding::resolve(
                         &event,
                         &self.bindings,
@@ -933,55 +1011,26 @@ impl ApplicationHandler<AppEvent> for App {
                     ) {
                         match action {
                             Action::Quit => _el.exit(),
+                            Action::FilterMode => {
+                                self.input_mode = InputMode::Filtering;
+                                needs_redraw = true;
+                            }
                             Action::ScriptHandlerPrefix => {
                                 self.input_mode = InputMode::WaitingForHandler;
                                 needs_redraw = true;
                             }
-                            a @ (Action::NextImage
-                            | Action::PrevImage
-                            | Action::FirstImage
-                            | Action::LastImage
-                            | Action::NextMark
-                            | Action::PrevMark) => {
-                                needs_redraw = self.handle_navigation_action(a);
-                            }
-                            a @ (Action::GridMoveLeft
-                            | Action::GridMoveRight
-                            | Action::GridMoveUp
-                            | Action::GridMoveDown) => {
-                                needs_redraw = self.handle_grid_movement_action(a);
-                            }
-                            a @ (Action::ResetView
-                            | Action::FitToWindow
-                            | Action::BestFit
-                            | Action::FitWidth
-                            | Action::FitHeight
-                            | Action::ZoomReset
-                            | Action::ZoomIn
-                            | Action::ZoomOut
-                            | Action::PanLeft
-                            | Action::PanRight
-                            | Action::PanUp
-                            | Action::PanDown) => {
-                                needs_redraw = self.handle_view_action(a, old_scale);
-                            }
-                            a @ (Action::RotateCW
-                            | Action::RotateCCW
-                            | Action::FlipHorizontal
-                            | Action::FlipVertical
-                            | Action::MarkFile
-                            | Action::UnmarkAll
-                            | Action::RemoveImage
-                            | Action::ToggleMarks) => {
-                                needs_redraw = self.handle_image_ops_action(a);
-                                if self.images.is_empty() {
+                            a => {
+                                if self.handle_navigation_action(a)
+                                    || self.handle_grid_movement_action(a)
+                                    || self.handle_view_action(a, old_scale)
+                                    || self.handle_image_ops_action(a)
+                                    || self.handle_toggle_action(a)
+                                {
+                                    needs_redraw = true;
+                                }
+                                if matches!(a, Action::RemoveImage) && self.images.is_empty() {
                                     _el.exit();
                                 }
-                            }
-                            a @ (Action::ToggleStatusBar
-                            | Action::ToggleGrid
-                            | Action::ToggleAnimation) => {
-                                needs_redraw = self.handle_toggle_action(a);
                             }
                         }
                     }
