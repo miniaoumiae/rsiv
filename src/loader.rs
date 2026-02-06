@@ -136,6 +136,7 @@ pub enum LoadRequest {
 pub struct Loader {
     urgent_tx: Sender<LoadRequest>,
     background_stack: Arc<(Mutex<VecDeque<LoadRequest>>, Condvar)>,
+    proxy: EventLoopProxy<AppEvent>,
 }
 
 impl Loader {
@@ -155,6 +156,7 @@ impl Loader {
         Self {
             urgent_tx,
             background_stack,
+            proxy,
         }
     }
 
@@ -172,7 +174,13 @@ impl Loader {
         // If the stack gets too huge (e.g. > 200), drop the oldest requests
         // Removing from the back drops the oldest (least priority) items
         if stack.len() > 200 {
-            stack.pop_back();
+            if let Some(dropped_req) = stack.pop_back() {
+                match dropped_req {
+                    LoadRequest::LoadThumbnail(p, _, _) | LoadRequest::LoadImage(p, _) => {
+                        let _ = self.proxy.send_event(AppEvent::LoadCancelled(p));
+                    }
+                }
+            }
         }
 
         cvar.notify_one();

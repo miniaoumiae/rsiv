@@ -41,6 +41,7 @@ pub enum AppEvent {
     ImagePixelsLoaded(PathBuf, Arc<crate::image_item::LoadedImage>),
     ThumbnailLoaded(PathBuf, Arc<(u32, u32, Vec<u8>)>),
     LoadError(PathBuf, String),
+    LoadCancelled(PathBuf),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -971,6 +972,9 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::LoadError(path, _err) => {
+                self.pending.remove(&path);
+            }
+            AppEvent::LoadCancelled(path) => {
                 self.pending.remove(&path);
             }
         }
