@@ -1037,6 +1037,10 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.filter_text.pop();
                                     self.apply_filter();
                                 }
+                                Key::Named(NamedKey::Space) => {
+                                    self.filter_text.push(' ');
+                                    self.apply_filter();
+                                }
                                 Key::Character(ref c) => {
                                     self.filter_text.push_str(c);
                                     self.apply_filter();
