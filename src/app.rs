@@ -529,11 +529,25 @@ impl App {
             }
             Action::RemoveImage => {
                 if !self.images.is_empty() {
-                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                        self.marked_files
-                            .remove(&item.path.to_string_lossy().to_string());
+                    let path_to_remove =
+                        if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                            Some(item.path.clone())
+                        } else {
+                            None
+                        };
+                    if let Some(p) = &path_to_remove {
+                        self.marked_files.remove(&p.to_string_lossy().to_string());
                     }
                     self.images.remove(self.current_index);
+                    if let Some(p) = path_to_remove {
+                        self.all_images.retain(|slot| {
+                            if let ImageSlot::MetadataLoaded(item) = slot {
+                                item.path != p
+                            } else {
+                                true
+                            }
+                        });
+                    }
                     if self.images.is_empty() {
                         self.current_index = 0;
                     } else if self.current_index >= self.images.len() {

@@ -48,13 +48,17 @@ impl App {
         // Check if file was deleted
         if !path_buf.exists() {
             self.cache.remove(&path_buf);
-            self.images.retain(|slot| {
-                if let ImageSlot::MetadataLoaded(item) = slot {
-                    item.path != path_buf
-                } else {
-                    true
-                }
-            });
+            let is_match =
+                |s: &ImageSlot| matches!(s, ImageSlot::MetadataLoaded(m) if m.path == path_buf);
+
+            if let Some(idx) = self.images.iter().position(is_match) {
+                self.images.remove(idx);
+            }
+
+            if let Some(idx) = self.all_images.iter().position(is_match) {
+                self.all_images.remove(idx);
+            }
+
             // Adjust index if out of bounds
             if self.current_index >= self.images.len() && !self.images.is_empty() {
                 self.current_index = self.images.len() - 1;
