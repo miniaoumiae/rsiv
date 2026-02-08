@@ -11,6 +11,7 @@
 
 - **Thumbnail Mode**: A grid-based view to browse directories.
 - **Constant Speed**: Uses a sliding window to load only what you see, keeping the app fast and crash-proof even with thousands of images.
+- **Live filesystem monitoring**: Automatically updates the image list when files are added, renamed, or deleted by external tools.
 - **Format Support**: Static images, animated **GIFs**, and **SVGs**.
 - **Script Handlers**: Execute external commands on images.
 - **Configuration**: Fully customizable keybindings and UI in toml.

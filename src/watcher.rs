@@ -13,7 +13,7 @@ pub fn spawn_watcher(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<
         let (tx, rx) = mpsc::channel();
 
         // Waits for the file to finish writing before telling the app.
-        let mut debouncer = new_debouncer(Duration::from_millis(200), tx).unwrap();
+        let mut debouncer = new_debouncer(Duration::from_millis(100), tx).unwrap();
 
         for path_str in paths {
             let path = Path::new(&path_str);
@@ -37,11 +37,6 @@ pub fn spawn_watcher(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<
                     for event in events {
                         use notify_debouncer_mini::DebouncedEventKind;
 
-                        // Filter out non-image
-                        if !is_likely_image(&event.path) {
-                            continue;
-                        }
-
                         match event.kind {
                             DebouncedEventKind::Any => {
                                 // Fallback/Generic change
@@ -56,18 +51,6 @@ pub fn spawn_watcher(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<
             }
         }
     });
-}
-
-fn is_likely_image(path: &Path) -> bool {
-    if let Some(ext) = path.extension() {
-        let ext_str = ext.to_string_lossy().to_lowercase();
-        matches!(
-            ext_str.as_str(),
-            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "tiff"
-        )
-    } else {
-        false
-    }
 }
 
 fn handle_change(path: &PathBuf, proxy: &EventLoopProxy<AppEvent>) {
