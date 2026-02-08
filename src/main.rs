@@ -11,6 +11,7 @@ mod script_handler;
 mod status_bar;
 mod utils;
 mod view_mode;
+mod watcher;
 
 use app::{App, AppEvent};
 use clap::Parser;
@@ -42,11 +43,10 @@ fn main() {
     let event_loop = EventLoop::<AppEvent>::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();
 
-    // We pass cli.output_marked to App just in case it needs to know,
-    // but primarily we check the app state after the loop finishes.
     let mut app = App::new(vec![], cli.thumbnail, proxy.clone());
 
-    loader::spawn_discovery_worker(cli.paths, cli.recursive, proxy.clone());
+    loader::spawn_discovery_worker(cli.paths.clone(), cli.recursive, proxy.clone());
+    watcher::spawn_watcher(cli.paths, cli.recursive, proxy.clone());
 
     let _ = event_loop.run_app(&mut app);
 

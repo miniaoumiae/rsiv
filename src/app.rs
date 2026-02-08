@@ -42,6 +42,8 @@ pub enum AppEvent {
     ThumbnailLoaded(PathBuf, Arc<(u32, u32, Vec<u8>)>),
     LoadError(PathBuf, String),
     LoadCancelled(PathBuf),
+    FileChanged(ImageItem),
+    FileDeleted(PathBuf),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -991,6 +993,87 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::LoadCancelled(path) => {
                 self.pending.remove(&path);
             }
+            AppEvent::FileChanged(new_item) => {
+                let path = new_item.path.clone();
+
+                // Check if this file already exists in our list
+                let existing_idx = self.all_images.iter().position(|slot| {
+                    if let ImageSlot::MetadataLoaded(item) = slot {
+                        item.path == path
+                    } else {
+                        false
+                    }
+                });
+
+                if let Some(idx) = existing_idx {
+                    // MODIFICATION: Update existing slot and clear cache
+                    self.cache.remove(&path);
+                    self.all_images[idx] = ImageSlot::MetadataLoaded(new_item.clone());
+
+                    // If currently visible, trigger redraw
+                    if let ImageSlot::MetadataLoaded(current_item) =
+                        &self.images[self.current_index]
+                    {
+                        if current_item.path == path {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                    }
+                } else {
+                    // CREATION: Insert new item
+                    // Find correct position to keep list sorted
+                    let insert_pos = self.all_images.partition_point(|slot| {
+                        if let ImageSlot::MetadataLoaded(item) = slot {
+                            item.path < path
+                        } else {
+                            true
+                        }
+                    });
+                    self.all_images
+                        .insert(insert_pos, ImageSlot::MetadataLoaded(new_item));
+                }
+
+                // Re-apply filter to ensure self.images reflects self.all_images
+                self.apply_filter();
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
+            AppEvent::FileDeleted(path) => {
+                self.cache.remove(&path);
+
+                // Remove from all_images
+                self.all_images.retain(|slot| {
+                    if let ImageSlot::MetadataLoaded(item) = slot {
+                        item.path != path
+                    } else {
+                        true
+                    }
+                });
+
+                // If the deleted image was the current one, standard logic applies
+                let was_current =
+                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                        item.path == path
+                    } else {
+                        false
+                    };
+
+                self.apply_filter();
+
+                if self.current_index >= self.images.len() {
+                    self.current_index = self.images.len().saturating_sub(1);
+                }
+
+                if was_current || self.grid_mode {
+                    self.reset_view_for_new_image();
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                }
+            }
         }
     }
 
@@ -1100,7 +1183,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 {
                                     needs_redraw = true;
                                 }
-                                if matches!(a, Action::RemoveImage) && self.images.is_empty() {
+                                if matches!(a, Action::RemoveImage) && self.all_images.is_empty() {
                                     _el.exit();
                                 }
                             }

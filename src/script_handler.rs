@@ -1,7 +1,6 @@
 use crate::app::{App, InputMode};
 use crate::config::AppConfig;
-use crate::image_item::{ImageItem, ImageSlot};
-use std::path::PathBuf;
+use crate::image_item::ImageSlot;
 
 impl App {
     pub fn execute_handler(&mut self, handler_key: &str, on_marked: bool) {
@@ -33,60 +32,9 @@ impl App {
             }
             let program = final_args.remove(0);
 
-            // Execute synchronously to ensure file availability for refresh
             let _ = std::process::Command::new(program)
                 .args(final_args)
                 .status();
-
-            self.refresh_specific_path(&path_str);
-        }
-    }
-
-    pub fn refresh_specific_path(&mut self, path: &str) {
-        let path_buf = PathBuf::from(path);
-
-        // Check if file was deleted
-        if !path_buf.exists() {
-            self.cache.remove(&path_buf);
-            let is_match =
-                |s: &ImageSlot| matches!(s, ImageSlot::MetadataLoaded(m) if m.path == path_buf);
-
-            if let Some(idx) = self.images.iter().position(is_match) {
-                self.images.remove(idx);
-            }
-
-            if let Some(idx) = self.all_images.iter().position(is_match) {
-                self.all_images.remove(idx);
-            }
-
-            // Adjust index if out of bounds
-            if self.current_index >= self.images.len() && !self.images.is_empty() {
-                self.current_index = self.images.len() - 1;
-            }
-            return;
-        }
-
-        // Re-load from disk (invalidate cache)
-        self.cache.remove(&path_buf);
-
-        if let Some(idx) = self.images.iter().position(|s| {
-            if let ImageSlot::MetadataLoaded(item) = s {
-                item.path == path_buf
-            } else {
-                false
-            }
-        }) {
-            if let Ok(format) = crate::loader::identify_format(&path_buf) {
-                if let Ok((width, height)) = crate::loader::probe_image(&path_buf, format) {
-                    let item = ImageItem {
-                        path: path_buf.clone(),
-                        width,
-                        height,
-                        format,
-                    };
-                    self.images[idx] = ImageSlot::MetadataLoaded(item);
-                }
-            }
         }
     }
 
