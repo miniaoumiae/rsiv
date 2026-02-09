@@ -40,13 +40,30 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    let canonical_paths: Vec<String> = cli
+        .paths
+        .iter()
+        .filter_map(|p| match std::fs::canonicalize(p) {
+            Ok(path) => Some(path.to_string_lossy().into_owned()),
+            Err(e) => {
+                eprintln!("Warning: Skipping invalid path '{}': {}", p, e);
+                None
+            }
+        })
+        .collect();
+
+    if canonical_paths.is_empty() {
+        eprintln!("Error: No valid paths provided.");
+        return;
+    }
+
     let event_loop = EventLoop::<AppEvent>::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();
 
     let mut app = App::new(vec![], cli.thumbnail, proxy.clone());
 
-    loader::spawn_discovery_worker(cli.paths.clone(), cli.recursive, proxy.clone());
-    watcher::spawn_watcher(cli.paths, cli.recursive, proxy.clone());
+    loader::spawn_discovery_worker(canonical_paths.clone(), cli.recursive, proxy.clone());
+    watcher::spawn_watcher(canonical_paths, cli.recursive, proxy.clone());
 
     let _ = event_loop.run_app(&mut app);
 
