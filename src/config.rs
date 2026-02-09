@@ -133,6 +133,7 @@ pub struct Keybindings {
     pub prev_mark: BindingList,
     pub handler_prefix: BindingList,
     pub filter_mode: BindingList,
+    pub toggle_alpha: BindingList,
 }
 
 impl Default for Keybindings {
@@ -172,6 +173,7 @@ impl Default for Keybindings {
             prev_mark: vec!["P"].into(),
             handler_prefix: vec!["Ctrl+x"].into(),
             filter_mode: vec!["/"].into(),
+            toggle_alpha: vec!["A"].into(),
         }
     }
 }

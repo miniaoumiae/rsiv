@@ -56,6 +56,7 @@ pub enum Action {
     RemoveImage,
     ScriptHandlerPrefix,
     FilterMode,
+    ToggleAlpha,
 }
 
 pub struct Binding {
@@ -342,6 +343,12 @@ impl Binding {
             &k.grid_page_down.0,
             BindingMode::Grid,
             Action::GridMovePageDown,
+        );
+        add(
+            &mut bindings,
+            &k.toggle_alpha.0,
+            BindingMode::Global,
+            Action::ToggleAlpha,
         );
 
         bindings

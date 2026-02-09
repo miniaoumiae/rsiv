@@ -349,6 +349,12 @@ Modifiers are specified by adding them before the key, separated by `+`.
 >
 > **Default:** `"Ctrl+a"`
 
+**toggle_alpha** = `string` | `[string]`
+
+> Toggle visibility of the alpha-channel (transparency). When enabled, a checkerboard pattern is displayed behind transparent areas.
+>
+> Default: "A"
+
 **mark_file** = `string` | `[string]`
 
 > Toggle the "mark" on the current file.

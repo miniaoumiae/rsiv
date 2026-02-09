@@ -85,6 +85,7 @@ pub struct App {
     pub show_status_bar: bool,
     pub discovery_complete: bool,
     pub grid_mode: bool,
+    pub show_alpha: bool,
     pub marked_files: HashSet<String>,
     pub bindings: Vec<crate::keybinds::Binding>,
 }
@@ -123,6 +124,7 @@ impl App {
             show_status_bar: true,
             discovery_complete: false,
             grid_mode: start_in_grid_mode,
+            show_alpha: false,
             marked_files: HashSet::new(),
             bindings: crate::keybinds::Binding::get_all_bindings(),
         }
@@ -627,6 +629,10 @@ impl App {
                 self.is_playing = !self.is_playing;
                 needs_redraw = true;
             }
+            Action::ToggleAlpha => {
+                self.show_alpha = !self.show_alpha;
+                needs_redraw = true;
+            }
             _ => {}
         }
         needs_redraw
@@ -801,6 +807,7 @@ impl App {
                         scale,
                         off_x: self.off_x,
                         off_y: self.off_y,
+                        show_alpha: self.show_alpha,
                     };
                     crate::renderer::draw_image(frame_slice, buf_w, available_h, &params);
                 }

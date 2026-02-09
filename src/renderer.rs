@@ -16,6 +16,7 @@ pub struct DrawImageParams<'a> {
     pub scale: f64,
     pub off_x: i32,
     pub off_y: i32,
+    pub show_alpha: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -36,6 +37,7 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
     let scale = params.scale;
     let off_x = params.off_x;
     let off_y = params.off_y;
+    let show_alpha = params.show_alpha;
 
     let img_w = image.width as f64;
     let img_h = image.height as f64;
@@ -70,6 +72,11 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
 
     let global_src_x_start_f = (start_x as f64 - tl_x) * inv_scale;
 
+    // Ckeckboard colors
+    let check_size = 16;
+    let check_color_1 = 204u8; // Light gray (0xCC)
+    let check_color_2 = 153u8; // Darker gray (0x99)
+
     frame
         .par_chunks_exact_mut((buf_w * 4) as usize)
         .enumerate()
@@ -95,7 +102,8 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
 
                 let dest_slice = &mut row_pixels[draw_slice_start..draw_slice_end];
 
-                for dest_pixel in dest_slice.chunks_exact_mut(4) {
+                for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
+                    let current_screen_x = start_x + i as i32; // Absolute X coordinate for checkerboard
                     let src_x = src_x_f as i32;
 
                     if src_x >= 0 && src_x < src_width {
@@ -105,18 +113,56 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
                             let src_a = src_p[3] as u32;
 
                             if src_a == 255 {
+                                // Opaque
                                 dest_pixel.copy_from_slice(src_p);
                             } else if src_a > 0 {
+                                // Transparent
+
+                                // Determine background color (Checkerboard or Window BG)
+                                let (bg_r, bg_g, bg_b) = if show_alpha {
+                                    // Calculate checkerboard based on screen coordinates
+                                    let is_dark =
+                                        ((current_screen_x / check_size) + (y / check_size)) % 2
+                                            == 0;
+                                    let c = if is_dark {
+                                        check_color_2
+                                    } else {
+                                        check_color_1
+                                    };
+                                    (c as u32, c as u32, c as u32)
+                                } else {
+                                    // Use existing background color
+                                    (
+                                        dest_pixel[0] as u32,
+                                        dest_pixel[1] as u32,
+                                        dest_pixel[2] as u32,
+                                    )
+                                };
+
                                 let inv_a = 255 - src_a;
-                                dest_pixel[0] = ((src_p[0] as u32 * src_a
-                                    + dest_pixel[0] as u32 * inv_a)
-                                    / 255) as u8;
-                                dest_pixel[1] = ((src_p[1] as u32 * src_a
-                                    + dest_pixel[1] as u32 * inv_a)
-                                    / 255) as u8;
-                                dest_pixel[2] = ((src_p[2] as u32 * src_a
-                                    + dest_pixel[2] as u32 * inv_a)
-                                    / 255) as u8;
+
+                                // Blend
+                                dest_pixel[0] =
+                                    ((src_p[0] as u32 * src_a + bg_r * inv_a) / 255) as u8;
+                                dest_pixel[1] =
+                                    ((src_p[1] as u32 * src_a + bg_g * inv_a) / 255) as u8;
+                                dest_pixel[2] =
+                                    ((src_p[2] as u32 * src_a + bg_b * inv_a) / 255) as u8;
+                                dest_pixel[3] = 255;
+                            }
+                            // If src_a == 0, we do nothing (leave existing background),
+                            // UNLESS we want to force draw the checkerboard over the cleared bg
+                            else if show_alpha {
+                                let is_dark =
+                                    ((current_screen_x / check_size) + (y / check_size)) % 2 == 0;
+                                let c = if is_dark {
+                                    check_color_2
+                                } else {
+                                    check_color_1
+                                };
+                                dest_pixel[0] = c;
+                                dest_pixel[1] = c;
+                                dest_pixel[2] = c;
                                 dest_pixel[3] = 255;
                             }
                         }

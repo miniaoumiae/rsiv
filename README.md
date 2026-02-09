@@ -125,7 +125,7 @@ You can find the default keybindings there as well.
 - [ ] Color filter (Gamma, Brightness, ...)
 - [ ] Numeric prefix like `10n`
 - [ ] Config hot reload ?
-- [ ] Images reload on change
+- [x] Images reload on change
 - [x] Memory usage optimization (`[options]`)
 - [x] Search/Filter mode
 
