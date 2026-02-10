@@ -30,6 +30,7 @@ pub enum Action {
     ZoomReset,
     FitToWindow,
     BestFit,
+    Cover,
     FitWidth,
     FitHeight,
     ResetView,
@@ -236,6 +237,12 @@ impl Binding {
             BindingMode::View,
             Action::BestFit,
         ); // 'F'
+        add(
+            &mut bindings,
+            &k.fit_cover.0,
+            BindingMode::View,
+            Action::Cover,
+        ); //C
         add(
             &mut bindings,
             &k.fit_width.0,

@@ -4,6 +4,7 @@ use serde::Deserialize;
 pub enum ViewMode {
     FitToWindow,
     BestFit,
+    Cover,
     FitWidth,
     FitHeight,
     Absolute,

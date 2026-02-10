@@ -267,6 +267,12 @@ Modifiers are specified by adding them before the key, separated by `+`.
 >
 > **Default:** `"f"`
 
+**fit_cover** = `string` | `[string]`
+
+> Set mode to Cover (fill up the available space).
+>
+> **Default:** `"C"`
+
 **fit_best_no_upscale** = `string` | `[string]`
 
 > Set mode to Best Fit (scales down to fit, never upscales).

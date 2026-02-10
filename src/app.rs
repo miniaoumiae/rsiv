@@ -177,6 +177,11 @@ impl App {
                 let h_ratio = buf_h / item.height as f64;
                 w_ratio.min(h_ratio).min(1.0)
             }
+            ViewMode::Cover => {
+                let w_ratio = buf_w / item.width as f64;
+                let h_ratio = buf_h / item.height as f64;
+                w_ratio.max(h_ratio)
+            }
             ViewMode::FitWidth => buf_w / item.width as f64,
             ViewMode::FitHeight => buf_h / item.height as f64,
         }
@@ -448,6 +453,14 @@ impl App {
             }
             Action::BestFit => {
                 self.mode = ViewMode::BestFit;
+                if config.options.auto_center {
+                    self.off_x = 0;
+                    self.off_y = 0;
+                }
+                needs_redraw = true;
+            }
+            Action::Cover => {
+                self.mode = ViewMode::Cover;
                 if config.options.auto_center {
                     self.off_x = 0;
                     self.off_y = 0;
