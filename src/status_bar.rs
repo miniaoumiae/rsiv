@@ -3,10 +3,36 @@ use crate::config::AppConfig;
 use crate::frame_buffer::FrameBuffer;
 use crate::utils;
 use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
+use std::fmt::Write;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 static UI_FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
 static UI_SWASH_CACHE: OnceLock<Mutex<SwashCache>> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+enum StatusToken {
+    Literal(String),
+    Path,
+    Prefix,
+    Slideshow,
+    Zoom,
+    Index,
+    Mark,
+}
+
+pub struct StatusContext<'a> {
+    pub scale_percent: u32,
+    pub index: usize,
+    pub total: usize,
+    pub path: &'a str,
+    pub is_marked: bool,
+    pub input_mode: &'a InputMode,
+    pub prefix_count: Option<usize>,
+    pub slideshow_on: bool,
+    pub slideshow_delay: Duration,
+    pub filter_text: &'a str,
+}
 
 pub struct StatusBar {
     pub height: u32,
@@ -15,6 +41,13 @@ pub struct StatusBar {
     background_color: (u8, u8, u8),
     left_buffer: Buffer,
     right_buffer: Buffer,
+
+    // COMPILED INSTRUCTIONS
+    left_tokens: Vec<StatusToken>,
+    right_tokens: Vec<StatusToken>,
+
+    // Optimization: Reusable buffer for text generation
+    scratch_buffer: String,
 
     // Caching for path truncation
     cached_raw_path: String,
@@ -47,6 +80,10 @@ impl StatusBar {
         left_buffer.set_size(&mut font_system, None, Some(height as f32));
         right_buffer.set_size(&mut font_system, None, Some(height as f32));
 
+        // Compile the formats from config
+        let left_tokens = Self::compile_format(&config.ui.status_format_left);
+        let right_tokens = Self::compile_format(&config.ui.status_format_right);
+
         Self {
             height,
             base_font_size,
@@ -54,10 +91,59 @@ impl StatusBar {
             background_color: utils::parse_color(&config.ui.status_bar_bg),
             left_buffer,
             right_buffer,
+            left_tokens,
+            right_tokens,
+            scratch_buffer: String::with_capacity(128),
             cached_raw_path: String::new(),
             cached_max_width: 0,
             cached_display_text: String::new(),
         }
+    }
+
+    fn compile_format(fmt: &str) -> Vec<StatusToken> {
+        let mut tokens = Vec::new();
+        let mut literal_buffer = String::new();
+        let mut chars = fmt.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '%' {
+                // Flush any pending literal text
+                if !literal_buffer.is_empty() {
+                    tokens.push(StatusToken::Literal(literal_buffer.clone()));
+                    literal_buffer.clear();
+                }
+
+                // Check the next character for the token type
+                if let Some(next) = chars.next() {
+                    match next {
+                        'p' => tokens.push(StatusToken::Path),
+                        'P' => tokens.push(StatusToken::Prefix),
+                        's' => tokens.push(StatusToken::Slideshow),
+                        'z' => tokens.push(StatusToken::Zoom),
+                        'i' => tokens.push(StatusToken::Index),
+                        'm' => tokens.push(StatusToken::Mark),
+                        '%' => literal_buffer.push('%'), // Escaped %% becomes literal %
+                        c => {
+                            // Unknown specifier, treat as literal text
+                            literal_buffer.push('%');
+                            literal_buffer.push(c);
+                        }
+                    }
+                } else {
+                    // Trailing % at end of string
+                    literal_buffer.push('%');
+                }
+            } else {
+                literal_buffer.push(c);
+            }
+        }
+
+        // Final flush
+        if !literal_buffer.is_empty() {
+            tokens.push(StatusToken::Literal(literal_buffer));
+        }
+
+        tokens
     }
 
     pub fn set_scale(&mut self, scale: f32) {
@@ -85,16 +171,53 @@ impl StatusBar {
         self.cached_max_width = 0;
     }
 
-    pub fn draw(
-        &mut self,
-        target: &mut FrameBuffer,
-        scale_percent: u32,
-        index: usize,
-        total: usize,
-        path: &str,
-        is_marked: bool,
-        input_mode: &InputMode,
-    ) {
+    fn render_tokens(target: &mut String, tokens: &[StatusToken], ctx: &StatusContext) {
+        // Use write! macro to append directly to target
+        for token in tokens {
+            match token {
+                StatusToken::Literal(s) => {
+                    let _ = write!(target, "{}", s);
+                }
+                StatusToken::Path => match ctx.input_mode {
+                    InputMode::Normal => {
+                        let _ = write!(target, "{}", ctx.path);
+                    }
+                    InputMode::Filtering => {
+                        let _ = write!(target, "/{}█", ctx.filter_text);
+                    }
+                    InputMode::WaitingForHandler => {
+                        let _ = write!(target, "[Handler] Press key... (Esc to cancel)");
+                    }
+                    InputMode::AwaitingTarget(_) => {
+                        let _ = write!(target, "[Target] (c)urrent/(m)arked? (Esc to cancel)");
+                    }
+                },
+                StatusToken::Prefix => {
+                    if let Some(n) = ctx.prefix_count {
+                        let _ = write!(target, "{}", n);
+                    }
+                }
+                StatusToken::Slideshow => {
+                    if ctx.slideshow_on {
+                        let _ = write!(target, "{}s", ctx.slideshow_delay.as_secs());
+                    }
+                }
+                StatusToken::Zoom => {
+                    let _ = write!(target, "{}%", ctx.scale_percent);
+                }
+                StatusToken::Index => {
+                    let _ = write!(target, "{}/{}", ctx.index, ctx.total);
+                }
+                StatusToken::Mark => {
+                    if ctx.is_marked {
+                        let _ = write!(target, "*");
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn draw(&mut self, target: &mut FrameBuffer, ctx: StatusContext) {
         // Lock both globals for the duration of the draw
         let mut font_system = UI_FONT_SYSTEM.get().unwrap().lock().unwrap();
         let mut swash_cache = UI_SWASH_CACHE
@@ -111,12 +234,13 @@ impl StatusBar {
         let family_name = Family::Name(&config.ui.font_family);
         let attrs = Attrs::new().family(family_name);
 
-        // Calculate right text position and width
-        let mark = if is_marked { "* " } else { "" };
-        let right_text = format!("{}{}% {}/{}", mark, scale_percent, index, total);
+        // --- Render Right Side ---
+        self.scratch_buffer.clear();
+        Self::render_tokens(&mut self.scratch_buffer, &self.right_tokens, &ctx);
+
         self.right_buffer.set_text(
             &mut font_system,
-            &right_text,
+            &self.scratch_buffer,
             &attrs,
             Shaping::Advanced,
             None,
@@ -127,40 +251,37 @@ impl StatusBar {
         let right_w = Self::measure_width(&self.right_buffer) as u32;
         let right_x = (width as i32) - (right_w as i32) - 5;
 
-        // Calculate available width for the path on the left
+        // Render Left Side
+        self.scratch_buffer.clear();
+        Self::render_tokens(&mut self.scratch_buffer, &self.left_tokens, &ctx);
+
+        let left_full_text = self.scratch_buffer.clone();
+
+        // Calculate available width for the path/prompt on the left
         // Leave a margin of roughly 5 chars (estimated by font size)
         let margin_px = (config.ui.font_size as u32 * 5).max(50);
         let max_path_w = (right_x - 5 - margin_px as i32).max(0) as u32;
 
-        let raw_text_to_show = match input_mode {
-            InputMode::Normal => path.to_string(),
-            InputMode::WaitingForHandler => "[Handler] Press key... (Esc to cancel)".to_string(),
-            InputMode::AwaitingTarget(_) => {
-                "[Target] (c)urrent/(m)arked? (Esc to cancel)".to_string()
-            }
-            InputMode::Filtering => format!("/{}█", path),
-        };
-
         // Cache Check
         let needs_recalc =
-            raw_text_to_show != self.cached_raw_path || max_path_w != self.cached_max_width;
+            left_full_text != self.cached_raw_path || max_path_w != self.cached_max_width;
 
         if needs_recalc {
-            self.cached_raw_path = raw_text_to_show.clone();
+            self.cached_raw_path = left_full_text.clone();
             self.cached_max_width = max_path_w;
 
             self.left_buffer.set_text(
                 &mut font_system,
-                &raw_text_to_show,
+                &left_full_text,
                 &attrs,
                 Shaping::Advanced,
                 None,
             );
             self.left_buffer.shape_until_scroll(&mut font_system, false);
 
-            // Binary Search Truncation (Expensive)
+            // Binary Search Truncation
             if Self::measure_width(&self.left_buffer) > max_path_w as f32 {
-                let full_path_chars: Vec<char> = raw_text_to_show.chars().collect();
+                let full_path_chars: Vec<char> = left_full_text.chars().collect();
                 let n = full_path_chars.len();
 
                 let mut low = 0;
@@ -190,7 +311,7 @@ impl StatusBar {
                 }
                 self.cached_display_text = best_str;
             } else {
-                self.cached_display_text = raw_text_to_show;
+                self.cached_display_text = left_full_text;
             }
         }
 

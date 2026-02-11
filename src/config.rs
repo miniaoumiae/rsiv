@@ -196,6 +196,8 @@ pub struct Ui {
     pub mark_color: String,
     pub loading_color: String,
     pub error_color: String,
+    pub status_format_left: String,
+    pub status_format_right: String,
 }
 
 impl Default for Ui {
@@ -210,6 +212,8 @@ impl Default for Ui {
             mark_color: "#FF0000".into(),
             loading_color: "#3c3c3c".into(),
             error_color: "#FF0000".into(),
+            status_format_left: "%p".into(),
+            status_format_right: "%P %s %z %i".into(),
         }
     }
 }

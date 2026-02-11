@@ -2,7 +2,7 @@ use crate::cache::CacheManager;
 use crate::image_item::{ImageItem, ImageSlot};
 use crate::keybinds::Action;
 use crate::loader::Loader;
-use crate::status_bar::StatusBar;
+use crate::status_bar::{StatusBar, StatusContext};
 use crate::view_mode::ViewMode;
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashSet;
@@ -922,20 +922,8 @@ impl App {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
 
-            if self.images.is_empty() {
-                self.status_bar.draw(
-                    &mut fb,
-                    100,
-                    0,
-                    0,
-                    if self.input_mode == InputMode::Filtering {
-                        &self.filter_text
-                    } else {
-                        "No matches"
-                    },
-                    false,
-                    &self.input_mode,
-                );
+            let (path_str, is_marked, scale_percent, index, total) = if self.images.is_empty() {
+                ("No matches", false, 100, 0, 0)
             } else {
                 match &self.images[self.current_index] {
                     ImageSlot::MetadataLoaded(item) => {
@@ -943,68 +931,65 @@ impl App {
                             .marked_files
                             .contains(&item.path.to_string_lossy().to_string());
                         let is_loaded = self.cache.get_image(&item.path).is_some();
-
-                        let slideshow_status = if self.slideshow_on {
-                            format!("{}s", self.slideshow_delay.as_secs())
+                        let s = if self.grid_mode || !is_loaded {
+                            100
                         } else {
-                            String::new()
+                            (scale * 100.0) as u32
                         };
-
-                        let display_path = if self.input_mode == InputMode::Filtering {
-                            self.filter_text.clone()
-                        } else {
-                            format!("{}{}", item.path.to_str().unwrap_or(""), slideshow_status)
-                        };
-
-                        self.status_bar.draw(
-                            &mut fb,
-                            if self.grid_mode || !is_loaded {
-                                100
-                            } else {
-                                (scale * 100.0) as u32
-                            },
-                            self.current_index + 1,
-                            self.images.len(),
-                            &display_path,
+                        (
+                            item.path.to_str().unwrap_or(""),
                             is_marked,
-                            &self.input_mode,
-                        );
-                    }
-                    ImageSlot::Error(err) => {
-                        let error_msg = format!("Error: {}", err);
-                        let display_text = if self.input_mode == InputMode::Filtering {
-                            &self.filter_text
-                        } else {
-                            &error_msg
-                        };
-                        self.status_bar.draw(
-                            &mut fb,
-                            0,
+                            s,
                             self.current_index + 1,
                             self.images.len(),
-                            display_text,
-                            false,
-                            &self.input_mode,
-                        );
+                        )
+                    }
+                    ImageSlot::Error(_err) => {
+                        // We need a string that lives long enough.
+                        // Since we can't easily return a reference to a temporary format! string from this match arm
+                        // without complex lifetime gymnastics or separate variable declarations,
+                        // and considering Error is rare, we might just handle it slightly differently or use a Cow logic if needed.
+                        // BUT, for simplicity in this specific structure, let's just use a fixed string "Error loading image"
+                        // or rely on the fact that we can't easily format! here and pass reference out.
+                        // Actually, let's create a temporary string variable outside if needed, OR just pass "Error: ..."
+                        // Let's defer the formatting.
+                        ("Error loading image", false, 0, self.current_index + 1, self.images.len())
                     }
                     ImageSlot::PendingMetadata => {
-                        let display_text = if self.input_mode == InputMode::Filtering {
-                            &self.filter_text
-                        } else {
-                            "Discovering..."
-                        };
-                        self.status_bar.draw(
-                            &mut fb,
-                            0,
-                            self.current_index + 1,
-                            self.images.len(),
-                            display_text,
-                            false,
-                            &self.input_mode,
-                        );
+                        ("Discovering...", false, 0, self.current_index + 1, self.images.len())
                     }
                 }
-            }
+            };
+            
+            // Handle the specific error message case if needed by checking slot again or just accepting generic message.
+            // To properly support "Error: {err}", we'd need to bind the formatted string to a variable in the outer scope.
+            // Let's do a quick fix for that.
+            let error_string_storage; 
+            let final_path_str = if !self.images.is_empty() {
+                 if let ImageSlot::Error(err) = &self.images[self.current_index] {
+                     error_string_storage = format!("Error: {}", err);
+                     &error_string_storage
+                 } else {
+                     path_str
+                 }
+            } else {
+                path_str
+            };
+
+            let ctx = StatusContext {
+                scale_percent,
+                index,
+                total,
+                path: final_path_str,
+                is_marked,
+                input_mode: &self.input_mode,
+                prefix_count: self.prefix_count,
+                slideshow_on: self.slideshow_on,
+                slideshow_delay: self.slideshow_delay,
+                filter_text: &self.filter_text,
+            };
+
+            self.status_bar.draw(&mut fb, ctx);
         }
 
         if let Err(err) = pixels.render() {
