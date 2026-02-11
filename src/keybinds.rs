@@ -51,6 +51,7 @@ pub enum Action {
     ToggleGrid,
     ToggleStatusBar,
     ToggleAnimation,
+    ToggleSlideshow,
     ToggleMarks,
     UnmarkAll,
     MarkFile,
@@ -147,6 +148,12 @@ impl Binding {
             &k.toggle_animation.0,
             BindingMode::Global,
             Action::ToggleAnimation,
+        );
+        add(
+            &mut bindings,
+            &k.toggle_slideshow.0,
+            BindingMode::Global,
+            Action::ToggleSlideshow,
         );
         add(
             &mut bindings,

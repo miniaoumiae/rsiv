@@ -89,6 +89,10 @@ pub struct App {
     pub marked_files: HashSet<String>,
     pub bindings: Vec<crate::keybinds::Binding>,
     pub prefix_count: Option<usize>,
+
+    pub slideshow_on: bool,
+    pub slideshow_delay: Duration,
+    pub last_slide_time: Instant,
 }
 
 impl App {
@@ -129,6 +133,9 @@ impl App {
             marked_files: HashSet::new(),
             bindings: crate::keybinds::Binding::get_all_bindings(),
             prefix_count: None,
+            slideshow_on: false,
+            slideshow_delay: Duration::from_secs(5),
+            last_slide_time: Instant::now(),
         }
     }
 
@@ -678,9 +685,25 @@ impl App {
         needs_redraw
     }
 
-    fn handle_toggle_action(&mut self, action: Action) -> bool {
+    fn handle_toggle_action(&mut self, action: Action, prefix: Option<usize>) -> bool {
         let mut needs_redraw = false;
         match action {
+            Action::ToggleSlideshow => {
+                if let Some(n) = prefix {
+                    // User typed a number (e.g. "10s")
+                    // Set delay and force ON
+                    let secs = n.max(1) as u64;
+                    self.slideshow_delay = Duration::from_secs(secs);
+                    self.slideshow_on = true;
+                    self.last_slide_time = Instant::now();
+                } else {
+                    // User just typed "s"
+                    // Toggle state, keep existing delay
+                    self.slideshow_on = !self.slideshow_on;
+                    self.last_slide_time = Instant::now(); // Reset timer on toggle
+                }
+                needs_redraw = true;
+            }
             Action::ToggleStatusBar => {
                 self.show_status_bar = !self.show_status_bar;
                 needs_redraw = true;
@@ -709,6 +732,19 @@ impl App {
         let scale = self.get_current_scale();
 
         if !self.images.is_empty() {
+            // Slideshow Logic
+            if self.slideshow_on {
+                let now = Instant::now();
+                if now.duration_since(self.last_slide_time) >= self.slideshow_delay {
+                    self.handle_navigation_action(Action::NextImage, 1);
+                    self.last_slide_time = now;
+                }
+                // Keep the loop running for slideshow
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
             // Request Logic
             if self.grid_mode {
                 if let Some(w) = &self.window {
@@ -907,10 +943,17 @@ impl App {
                             .marked_files
                             .contains(&item.path.to_string_lossy().to_string());
                         let is_loaded = self.cache.get_image(&item.path).is_some();
-                        let display_path = if self.input_mode == InputMode::Filtering {
-                            &self.filter_text
+
+                        let slideshow_status = if self.slideshow_on {
+                            format!("{}s", self.slideshow_delay.as_secs())
                         } else {
-                            item.path.to_str().unwrap_or("")
+                            String::new()
+                        };
+
+                        let display_path = if self.input_mode == InputMode::Filtering {
+                            self.filter_text.clone()
+                        } else {
+                            format!("{}{}", item.path.to_str().unwrap_or(""), slideshow_status)
                         };
 
                         self.status_bar.draw(
@@ -922,7 +965,7 @@ impl App {
                             },
                             self.current_index + 1,
                             self.images.len(),
-                            display_path,
+                            &display_path,
                             is_marked,
                             &self.input_mode,
                         );
@@ -1265,13 +1308,15 @@ impl ApplicationHandler<AppEvent> for App {
                                 needs_redraw = true;
                             }
                             other_action => {
+                                // Capture raw prefix for toggles
+                                let raw_prefix = self.prefix_count;
                                 let count = self.pop_count();
 
                                 if self.handle_navigation_action(other_action, count)
                                     || self.handle_grid_movement_action(other_action, count)
                                     || self.handle_image_ops_action(other_action, count)
                                     || self.handle_view_action(other_action, old_scale)
-                                    || self.handle_toggle_action(other_action)
+                                    || self.handle_toggle_action(other_action, raw_prefix)
                                 {
                                     needs_redraw = true;
                                 }
