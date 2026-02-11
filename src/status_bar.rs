@@ -19,6 +19,7 @@ enum StatusToken {
     Zoom,
     Index,
     Mark,
+    Frames,
 }
 
 pub struct StatusContext<'a> {
@@ -32,6 +33,8 @@ pub struct StatusContext<'a> {
     pub slideshow_on: bool,
     pub slideshow_delay: Duration,
     pub filter_text: &'a str,
+    pub current_frame: usize,
+    pub total_frames: usize,
 }
 
 pub struct StatusBar {
@@ -122,6 +125,7 @@ impl StatusBar {
                         'z' => tokens.push(StatusToken::Zoom),
                         'i' => tokens.push(StatusToken::Index),
                         'm' => tokens.push(StatusToken::Mark),
+                        'f' => tokens.push(StatusToken::Frames),
                         '%' => literal_buffer.push('%'), // Escaped %% becomes literal %
                         c => {
                             // Unknown specifier, treat as literal text
@@ -211,6 +215,11 @@ impl StatusBar {
                 StatusToken::Mark => {
                     if ctx.is_marked {
                         let _ = write!(target, "*");
+                    }
+                }
+                StatusToken::Frames => {
+                    if ctx.total_frames > 1 {
+                        let _ = write!(target, "[{}/{}]", ctx.current_frame, ctx.total_frames);
                     }
                 }
             }

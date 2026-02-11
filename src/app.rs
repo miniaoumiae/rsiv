@@ -922,6 +922,7 @@ impl App {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
 
+            let error_storage;
             let (path_str, is_marked, scale_percent, index, total) = if self.images.is_empty() {
                 ("No matches", false, 100, 0, 0)
             } else {
@@ -944,49 +945,49 @@ impl App {
                             self.images.len(),
                         )
                     }
-                    ImageSlot::Error(_err) => {
-                        // We need a string that lives long enough.
-                        // Since we can't easily return a reference to a temporary format! string from this match arm
-                        // without complex lifetime gymnastics or separate variable declarations,
-                        // and considering Error is rare, we might just handle it slightly differently or use a Cow logic if needed.
-                        // BUT, for simplicity in this specific structure, let's just use a fixed string "Error loading image"
-                        // or rely on the fact that we can't easily format! here and pass reference out.
-                        // Actually, let's create a temporary string variable outside if needed, OR just pass "Error: ..."
-                        // Let's defer the formatting.
-                        ("Error loading image", false, 0, self.current_index + 1, self.images.len())
+                    ImageSlot::Error(err) => {
+                        error_storage = format!("Error: {}", err);
+                        (
+                            error_storage.as_str(),
+                            false,
+                            0,
+                            self.current_index + 1,
+                            self.images.len(),
+                        )
                     }
                     ImageSlot::PendingMetadata => {
                         ("Discovering...", false, 0, self.current_index + 1, self.images.len())
                     }
                 }
             };
-            
-            // Handle the specific error message case if needed by checking slot again or just accepting generic message.
-            // To properly support "Error: {err}", we'd need to bind the formatted string to a variable in the outer scope.
-            // Let's do a quick fix for that.
-            let error_string_storage; 
-            let final_path_str = if !self.images.is_empty() {
-                 if let ImageSlot::Error(err) = &self.images[self.current_index] {
-                     error_string_storage = format!("Error: {}", err);
-                     &error_string_storage
-                 } else {
-                     path_str
-                 }
+
+            let (current_frame, total_frames) = if !self.images.is_empty() {
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    if let Some(img) = self.cache.get_image(&item.path) {
+                        (self.current_frame_index + 1, img.frames.len())
+                    } else {
+                        (0, 0)
+                    }
+                } else {
+                    (0, 0)
+                }
             } else {
-                path_str
+                (0, 0)
             };
 
             let ctx = StatusContext {
                 scale_percent,
                 index,
                 total,
-                path: final_path_str,
+                path: path_str,
                 is_marked,
                 input_mode: &self.input_mode,
                 prefix_count: self.prefix_count,
                 slideshow_on: self.slideshow_on,
                 slideshow_delay: self.slideshow_delay,
                 filter_text: &self.filter_text,
+                current_frame,
+                total_frames,
             };
 
             self.status_bar.draw(&mut fb, ctx);
