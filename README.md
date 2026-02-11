@@ -115,7 +115,7 @@ You can find the default keybindings there as well.
 - [x] SVG support
 - [x] Keybinds personalisation
 - [x] Command line arguments
-- [ ] Other view modes
+- [x] Other view modes
 - [x] UI personalisation
 - [x] Thumbnail mode
 - [ ] Other files options (`%f`) in the handlers ?
@@ -123,7 +123,7 @@ You can find the default keybindings there as well.
 - [ ] Mouse support ?
 - [x] Configurable options
 - [ ] Color filter (Gamma, Brightness, ...)
-- [ ] Numeric prefix like `10n`
+- [x] Numeric prefix like `10n`
 - [ ] Config hot reload ?
 - [x] Images reload on change
 - [x] Memory usage optimization (`[options]`)

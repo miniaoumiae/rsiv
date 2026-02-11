@@ -75,6 +75,31 @@ This section documents the `[ui]` table of the configuration file.
 >
 > **Default:** `"#FF0000"`
 
+**status_format_left** = `string`
+
+> The format string for the left side of the status bar. See **Status Bar Formatting** below.
+>
+> **Default:** `"%p"`
+
+**status_format_right** = `string`
+
+> The format string for the right side of the status bar. See **Status Bar Formatting** below.
+>
+> **Default:** `"%P %s %f %z %i"`
+
+### Status Bar Formatting
+
+The status bar strings accept the following tokens:
+
+- **`%p`**: Current file absolute path.
+- **`%P`**: The numeric prefix currently being typed (e.g., "10").
+- **`%s`**: Slideshow status (e.g., "5s") if active.
+- **`%f`**: Frame counter for animations (e.g., "[1/40]"). Hidden for static images.
+- **`%z`**: Current zoom level (e.g., "100%").
+- **`%i`**: Image index (e.g., "1/50").
+- **`%m`**: Mark indicator ("\*") if the file is selected.
+- **`%%`**: A literal "%" character.
+
 ## OPTIONS
 
 This section documents the `[options]` table of the configuration file.
