@@ -15,6 +15,7 @@ mod watcher;
 
 use app::{App, AppEvent};
 use clap::Parser;
+use std::io::{self, BufRead, IsTerminal};
 use winit::event_loop::EventLoop;
 
 #[derive(Parser, Debug)]
@@ -33,15 +34,30 @@ struct Cli {
     output_marked: bool,
 
     /// Image paths or directories
-    #[arg(required = true)]
+    #[arg(required = false)]
     paths: Vec<String>,
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    let canonical_paths: Vec<String> = cli
-        .paths
+    let mut raw_paths = cli.paths.clone();
+
+    if !io::stdin().is_terminal() {
+        let stdin = io::stdin();
+        let handle = stdin.lock();
+
+        for line in handle.lines() {
+            if let Ok(path_str) = line {
+                let trimmed = path_str.trim();
+                if !trimmed.is_empty() {
+                    raw_paths.push(trimmed.to_string());
+                }
+            }
+        }
+    }
+
+    let canonical_paths: Vec<String> = raw_paths
         .iter()
         .filter_map(|p| match std::fs::canonicalize(p) {
             Ok(path) => Some(path.to_string_lossy().into_owned()),
