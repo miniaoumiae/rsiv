@@ -26,6 +26,7 @@ num_cpus = "1.17.0"
 nucleo = "0.5.0"
 notify = { version = "6.1", features = ["serde"] }
 notify-debouncer-mini = "0.4"
+kamadak-exif = "0.5"
 
 # [profile.release]
 # # opt-level = 's'
