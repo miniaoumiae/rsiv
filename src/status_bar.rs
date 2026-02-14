@@ -9,8 +9,8 @@ use std::time::Duration;
 
 static UI_FONT_SYSTEM: OnceLock<Mutex<FontSystem>> = OnceLock::new();
 static UI_SWASH_CACHE: OnceLock<Mutex<SwashCache>> = OnceLock::new();
+const FRAMES: [char; 8] = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 
-#[derive(Debug, Clone)]
 enum StatusToken {
     Literal(String),
     Path,
@@ -35,6 +35,8 @@ pub struct StatusContext<'a> {
     pub filter_text: &'a str,
     pub current_frame: usize,
     pub total_frames: usize,
+    pub spinner_frame: usize,
+    pub is_handler_running: bool,
 }
 
 pub struct StatusBar {
@@ -176,26 +178,14 @@ impl StatusBar {
     }
 
     fn render_tokens(target: &mut String, tokens: &[StatusToken], ctx: &StatusContext) {
-        // Use write! macro to append directly to target
         for token in tokens {
             match token {
                 StatusToken::Literal(s) => {
                     let _ = write!(target, "{}", s);
                 }
-                StatusToken::Path => match ctx.input_mode {
-                    InputMode::Normal => {
-                        let _ = write!(target, "{}", ctx.path);
-                    }
-                    InputMode::Filtering => {
-                        let _ = write!(target, "/{}█", ctx.filter_text);
-                    }
-                    InputMode::WaitingForHandler => {
-                        let _ = write!(target, "[Handler] Press key... (Esc to cancel)");
-                    }
-                    InputMode::AwaitingTarget(_) => {
-                        let _ = write!(target, "[Target] (c)urrent/(m)arked? (Esc to cancel)");
-                    }
-                },
+                StatusToken::Path => {
+                    let _ = write!(target, "{}", ctx.path);
+                }
                 StatusToken::Prefix => {
                     if let Some(n) = ctx.prefix_count {
                         let _ = write!(target, "{}", n);
@@ -227,7 +217,6 @@ impl StatusBar {
     }
 
     pub fn draw(&mut self, target: &mut FrameBuffer, ctx: StatusContext) {
-        // Lock both globals for the duration of the draw
         let mut font_system = UI_FONT_SYSTEM.get().unwrap().lock().unwrap();
         let mut swash_cache = UI_SWASH_CACHE
             .get_or_init(|| Mutex::new(SwashCache::new()))
@@ -243,9 +232,11 @@ impl StatusBar {
         let family_name = Family::Name(&config.ui.font_family);
         let attrs = Attrs::new().family(family_name);
 
-        // Render Right Side
         self.scratch_buffer.clear();
-        Self::render_tokens(&mut self.scratch_buffer, &self.right_tokens, &ctx);
+
+        if !ctx.is_handler_running {
+            Self::render_tokens(&mut self.scratch_buffer, &self.right_tokens, &ctx);
+        }
 
         self.right_buffer.set_text(
             &mut font_system,
@@ -262,7 +253,36 @@ impl StatusBar {
 
         // Render Left Side
         self.scratch_buffer.clear();
-        Self::render_tokens(&mut self.scratch_buffer, &self.left_tokens, &ctx);
+
+        if ctx.is_handler_running {
+            let current_spin = FRAMES[ctx.spinner_frame & 7];
+            let _ = write!(
+                self.scratch_buffer,
+                "{} Executing handler... (Ctrl+C to cancel)",
+                current_spin
+            );
+        } else {
+            match ctx.input_mode {
+                InputMode::Filtering => {
+                    let _ = write!(self.scratch_buffer, "/{}█", ctx.filter_text);
+                }
+                InputMode::WaitingForHandler => {
+                    let _ = write!(
+                        self.scratch_buffer,
+                        "[Handler] Press key... (Esc to cancel)"
+                    );
+                }
+                InputMode::AwaitingTarget(_) => {
+                    let _ = write!(
+                        self.scratch_buffer,
+                        "[Target] (c)urrent/(m)arked? (Esc to cancel)"
+                    );
+                }
+                InputMode::Normal => {
+                    Self::render_tokens(&mut self.scratch_buffer, &self.left_tokens, &ctx);
+                }
+            }
+        }
 
         let left_full_text = self.scratch_buffer.clone();
 

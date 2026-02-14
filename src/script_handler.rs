@@ -1,14 +1,22 @@
 use crate::app::{App, InputMode};
-use crate::config::AppConfig;
 use crate::image_item::ImageSlot;
 
 impl App {
     pub fn execute_handler(&mut self, handler_key: &str, on_marked: bool) {
+        // Prevent stacking handlers
+        if self.is_handler_running {
+            self.input_mode = InputMode::Normal;
+            return;
+        }
+
         let config = crate::config::AppConfig::get();
 
         let cmd_args = match config.handlers.get(handler_key) {
             Some(args) => args.clone(),
-            None => return,
+            None => {
+                self.input_mode = InputMode::Normal;
+                return;
+            }
         };
 
         let current_path_str =
@@ -29,12 +37,42 @@ impl App {
         };
 
         if paths.is_empty() || cmd_args.is_empty() {
+            self.input_mode = InputMode::Normal;
             return;
         }
 
         let is_bulk = cmd_args.iter().any(|arg| arg.contains("%M"));
 
+        // Set state
+        self.is_handler_running = true;
+        self.input_mode = InputMode::Normal;
+        self.handler_cancel_flag
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let cancel_flag = self.handler_cancel_flag.clone();
+        let proxy = self.proxy.clone();
+
         std::thread::spawn(move || {
+            let run_interruptible = |program: &str, args: &[String]| {
+                if let Ok(mut child) = std::process::Command::new(program).args(args).spawn() {
+                    loop {
+                        // Cancellation
+                        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                            let _ = child.kill();
+                            let _ = child.wait(); // Prevent zombie processes
+                            break;
+                        }
+
+                        // Poll the process
+                        match child.try_wait() {
+                            Ok(Some(_status)) => break,
+                            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                            Err(_) => break,
+                        }
+                    }
+                }
+            };
+
             if is_bulk {
                 let current_path_obj = std::path::Path::new(&current_path_str);
                 let mut final_args = Vec::with_capacity(cmd_args.len() + paths.len());
@@ -54,10 +92,14 @@ impl App {
                 }
 
                 if let Some((program, args)) = final_args.split_first() {
-                    let _ = std::process::Command::new(program).args(args).status();
+                    run_interruptible(program, args);
                 }
             } else {
                 for path_str in paths {
+                    if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                        break; // Stop processing the queue if cancelled
+                    }
+
                     let path_obj = std::path::Path::new(&path_str);
 
                     let final_args: Vec<String> = cmd_args
@@ -66,21 +108,29 @@ impl App {
                         .collect();
 
                     if let Some((program, args)) = final_args.split_first() {
-                        let _ = std::process::Command::new(program).args(args).status();
+                        run_interruptible(program, args);
                     }
                 }
             }
+
+            // Release the UI lock
+            let _ = proxy.send_event(crate::app::AppEvent::HandlerFinished);
         });
     }
 
     pub fn handle_modal_input(&mut self, key: &str) {
         match &self.input_mode {
             InputMode::WaitingForHandler => {
-                let config = AppConfig::get();
+                // Prevent even starting the prompt if running
+                if self.is_handler_running {
+                    self.input_mode = InputMode::Normal;
+                    return;
+                }
+
+                let config = crate::config::AppConfig::get();
                 if config.handlers.contains_key(key) {
                     if self.marked_files.is_empty() {
                         self.execute_handler(key, false);
-                        self.input_mode = InputMode::Normal;
                     } else {
                         self.input_mode = InputMode::AwaitingTarget(key.to_string());
                     }
@@ -91,11 +141,16 @@ impl App {
             InputMode::AwaitingTarget(handler_key) => {
                 let h_key = handler_key.clone();
                 match key {
-                    "c" => self.execute_handler(&h_key, false),
-                    "m" => self.execute_handler(&h_key, true),
-                    _ => {}
+                    "c" => {
+                        self.execute_handler(&h_key, false);
+                    }
+                    "m" => {
+                        self.execute_handler(&h_key, true);
+                    }
+                    _ => {
+                        self.input_mode = InputMode::Normal;
+                    }
                 }
-                self.input_mode = InputMode::Normal;
             }
             InputMode::Normal | InputMode::Filtering => {}
         }

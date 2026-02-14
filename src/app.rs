@@ -32,6 +32,8 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 ))]
 use winit::platform::x11::WindowAttributesExtX11;
 
+use std::sync::atomic::AtomicBool;
+
 #[derive(Debug)]
 pub enum AppEvent {
     InitialCount(usize),
@@ -44,6 +46,7 @@ pub enum AppEvent {
     LoadCancelled(PathBuf),
     FileChanged(ImageItem),
     FileDeleted(PathBuf),
+    HandlerFinished,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -64,6 +67,7 @@ pub struct App {
     pub window: Option<Arc<Window>>,
     pub pixels: Option<Pixels<'static>>,
     pub filter_text: String,
+    pub proxy: EventLoopProxy<AppEvent>,
 
     // Resources
     pub loader: Loader,
@@ -79,6 +83,8 @@ pub struct App {
     // Input state
     pub modifiers: ModifiersState,
     pub input_mode: InputMode,
+    pub handler_cancel_flag: Arc<AtomicBool>,
+    pub is_handler_running: bool,
 
     // UI
     pub status_bar: StatusBar,
@@ -113,7 +119,8 @@ impl App {
             window: None,
             pixels: None,
             filter_text: String::new(),
-            loader: Loader::new(proxy),
+            loader: Loader::new(proxy.clone()),
+            proxy,
             cache: CacheManager::new(
                 config.options.image_cache_size,
                 config.options.thumb_cache_size,
@@ -124,6 +131,8 @@ impl App {
             last_update: Instant::now(),
             frame_timer: Duration::ZERO,
             input_mode: InputMode::Normal,
+            handler_cancel_flag: Arc::new(AtomicBool::new(false)),
+            is_handler_running: false,
             modifiers: ModifiersState::default(),
             status_bar: StatusBar::new(),
             show_status_bar: true,
@@ -1012,6 +1021,19 @@ impl App {
                 (0, 0)
             };
 
+            let spinner_frame = if self.is_handler_running {
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+                (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    / 100) as usize
+            } else {
+                0
+            };
+
             let ctx = StatusContext {
                 scale_percent,
                 index,
@@ -1025,6 +1047,8 @@ impl App {
                 filter_text: &self.filter_text,
                 current_frame,
                 total_frames,
+                spinner_frame,
+                is_handler_running: self.is_handler_running,
             };
 
             self.status_bar.draw(&mut fb, ctx);
@@ -1163,7 +1187,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 } else {
-                    // CREATION: Insert new item
+                    // Creation: Insert new item
                     // Find correct position to keep list sorted
                     let insert_pos = self.all_images.partition_point(|slot| {
                         if let ImageSlot::MetadataLoaded(item) = slot {
@@ -1216,6 +1240,12 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
             }
+            AppEvent::HandlerFinished => {
+                self.is_handler_running = false;
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
         }
     }
 
@@ -1247,6 +1277,22 @@ impl ApplicationHandler<AppEvent> for App {
                 if event.state.is_pressed() {
                     use winit::keyboard::{Key, NamedKey};
                     let mut needs_redraw = false;
+
+                    if self.is_handler_running {
+                        let is_ctrl_c = match &event.logical_key {
+                            winit::keyboard::Key::Character(c) if c.eq_ignore_ascii_case("c") => {
+                                self.modifiers.control_key()
+                            }
+                            _ => false,
+                        };
+
+                        if is_ctrl_c {
+                            // Signal background thread to kill the process
+                            self.handler_cancel_flag
+                                .store(true, std::sync::atomic::Ordering::Relaxed);
+                            return;
+                        }
+                    }
 
                     // Hardcoded escape
                     if event.logical_key == Key::Named(NamedKey::Escape) {
