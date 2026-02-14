@@ -34,9 +34,7 @@ pub fn set_quiet_mode(quiet: bool) {
 macro_rules! rsiv_err {
     ($($arg:tt)*) => {{
         if !$crate::utils::QUIET_MODE.load(std::sync::atomic::Ordering::Relaxed) {
-            // \x1b[1;31m is ANSI Bold Red, \x1b[0m resets color
-            eprint!("\x1b[1;31m[error]\x1b[0m rsiv: ");
-            eprintln!($($arg)*);
+            eprintln!("\x1b[1;31m[error]\x1b[0m rsiv: {}", format_args!($($arg)*));
         }
     }};
 }
@@ -45,10 +43,7 @@ macro_rules! rsiv_err {
 macro_rules! rsiv_warn {
     ($($arg:tt)*) => {{
         if !$crate::utils::QUIET_MODE.load(std::sync::atomic::Ordering::Relaxed) {
-            // \x1b[1;33m is ANSI Bold Yellow
-            eprint!("\x1b[1;33m[warning]\x1b[0m rsiv: ");
-            eprintln!($($arg)*);
+            eprintln!("\x1b[1;33m[warning]\x1b[0m rsiv: {}", format_args!($($arg)*));
         }
     }};
 }
-

@@ -135,7 +135,7 @@ pub fn spawn_discovery_worker(
                     let _ = proxy.send_event(AppEvent::MetadataLoaded(idx, item));
                 }
                 Err(e) => {
-                    let _ = proxy.send_event(AppEvent::MetadataError(idx, e));
+                    let _ = proxy.send_event(AppEvent::MetadataError(idx, path, e));
                 }
             });
 
@@ -254,9 +254,9 @@ fn process_request(req: LoadRequest, proxy: &EventLoopProxy<AppEvent>) {
                 Ok(thumb) => {
                     let _ = proxy.send_event(AppEvent::ThumbnailLoaded(path, Arc::new(thumb)));
                 }
-                Err(_) => {
+                Err(e) => {
                     let _ =
-                        proxy.send_event(AppEvent::LoadError(path, "Thumbnail Error".to_string()));
+                        proxy.send_event(AppEvent::LoadError(path, format!("Thumbnail Error: {}", e)));
                 }
             }
         }

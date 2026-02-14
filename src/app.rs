@@ -36,7 +36,7 @@ use winit::platform::x11::WindowAttributesExtX11;
 pub enum AppEvent {
     InitialCount(usize),
     MetadataLoaded(usize, ImageItem),
-    MetadataError(usize, String),
+    MetadataError(usize, PathBuf, String),
     DiscoveryComplete,
     ImagePixelsLoaded(PathBuf, Arc<crate::image_item::LoadedImage>),
     ThumbnailLoaded(PathBuf, Arc<(u32, u32, Vec<u8>)>),
@@ -1055,7 +1055,8 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
             }
-            AppEvent::MetadataError(idx, err) => {
+            AppEvent::MetadataError(idx, path, err) => {
+                crate::rsiv_err!("Metadata error for {:?}: {}", path, err);
                 if let Some(slot) = self.all_images.get_mut(idx) {
                     *slot = ImageSlot::Error(err.clone());
                 }
@@ -1092,7 +1093,8 @@ impl ApplicationHandler<AppEvent> for App {
                     self.window.as_ref().unwrap().request_redraw();
                 }
             }
-            AppEvent::LoadError(path, _err) => {
+            AppEvent::LoadError(path, err) => {
+                crate::rsiv_err!("Failed to load image {:?}: {}", path, err);
                 self.pending.remove(&path);
             }
             AppEvent::LoadCancelled(path) => {
