@@ -25,7 +25,7 @@ pub fn spawn_watcher(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<
                 };
 
                 if let Err(e) = debouncer.watcher().watch(path, mode) {
-                    eprintln!("Watcher error for {:?}: {}", path, e);
+                    crate::rsiv_warn!("Watcher error for {:?}: {}", path, e);
                 }
             }
         }
@@ -47,7 +47,7 @@ pub fn spawn_watcher(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<
                         }
                     }
                 }
-                Err(e) => eprintln!("Watch error: {:?}", e),
+                Err(e) => crate::rsiv_warn!("Watch error: {:?}", e),
             }
         }
     });

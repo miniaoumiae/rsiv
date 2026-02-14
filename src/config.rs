@@ -30,9 +30,9 @@ impl AppConfig {
                 match fs::read_to_string(&path) {
                     Ok(contents) => match toml::from_str(&contents) {
                         Ok(config) => return config,
-                        Err(e) => eprintln!("Failed to parse config at {:?}: {}", path, e),
+                        Err(e) => crate::rsiv_warn!("Failed to parse config at {:?}: {}", path, e),
                     },
-                    Err(e) => eprintln!("Failed to read config at {:?}: {}", path, e),
+                    Err(e) => crate::rsiv_warn!("Failed to read config at {:?}: {}", path, e),
                 }
             }
         }

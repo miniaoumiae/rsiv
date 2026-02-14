@@ -33,6 +33,10 @@ struct Cli {
     #[arg(short, long)]
     output_marked: bool,
 
+    /// Quiet mode: Suppress warnings and non-fatal errors
+    #[arg(short, long)]
+    quiet: bool,
+
     /// Image paths or directories
     #[arg(required = false)]
     paths: Vec<String>,
@@ -40,6 +44,8 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
+
+    crate::utils::set_quiet_mode(cli.quiet);
 
     let mut raw_paths = cli.paths.clone();
 
@@ -62,14 +68,14 @@ fn main() {
         .filter_map(|p| match std::fs::canonicalize(p) {
             Ok(path) => Some(path.to_string_lossy().into_owned()),
             Err(e) => {
-                eprintln!("Warning: Skipping invalid path '{}': {}", p, e);
+                crate::rsiv_warn!("Skipping invalid path '{}': {}", p, e);
                 None
             }
         })
         .collect();
 
     if canonical_paths.is_empty() {
-        eprintln!("Error: No valid paths provided.");
+        crate::rsiv_err!("No valid paths provided.");
         return;
     }
 

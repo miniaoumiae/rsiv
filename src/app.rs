@@ -996,7 +996,7 @@ impl App {
         }
 
         if let Err(err) = pixels.render() {
-            eprintln!("Pixels render error: {}", err);
+            crate::rsiv_err!("Pixels render error: {}", err);
         }
     }
 }
@@ -1072,7 +1072,7 @@ impl ApplicationHandler<AppEvent> for App {
                     .any(|slot| matches!(slot, ImageSlot::MetadataLoaded(_)));
 
                 if !has_valid_images {
-                    eprintln!("No images found. Exiting...");
+                    crate::rsiv_err!("No images found. Exiting...");
                     _el.exit();
                 }
             }
