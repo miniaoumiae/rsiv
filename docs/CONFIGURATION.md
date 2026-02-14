@@ -258,7 +258,7 @@ Modifiers are specified by adding them before the key, separated by `+`.
 >
 > **Default:** `"Ctrl+x"`
 
-**filter_mode** = string | [string]
+**filter_mode** = `string | [string]`
 
 > Enters Fuzzy Filter Mode. While in this mode, a / buffer appears in the status bar. As you type, the image list is filtered in real-time using fuzzy matching
 >
@@ -380,6 +380,24 @@ Modifiers are specified by adding them before the key, separated by `+`.
 >
 > **Default:** `"Ctrl+a"`
 
+**toggle_slideshow** = `string` | `[string]`
+
+> Start/Stop the slideshow.
+>
+> **Default:** `"s"`
+
+**next_frame** = `string` | `[string]`
+
+> Advance to the next frame in an animation. Automatically pauses playback.
+>
+> **Default:** `"."`
+
+**prev_frame** = `string` | `[string]`
+
+> Go back to the previous frame in an animation. Automatically pauses playback.
+>
+> **Default:** `","`
+
 **toggle_alpha** = `string` | `[string]`
 
 > Toggle visibility of the alpha-channel (transparency). When enabled, a checkerboard pattern is displayed behind transparent areas.
@@ -409,6 +427,12 @@ Modifiers are specified by adding them before the key, separated by `+`.
 > Remove the current image from the view.
 >
 > **Default:** `"D"`
+
+**clear_count** = `string` | `[string]`
+
+> Clear the current numeric prefix.
+>
+> **Default:** `"Esc"`
 
 ## CREDITS AND INSPIRATION
 

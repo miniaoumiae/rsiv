@@ -315,6 +315,37 @@ impl App {
                     needs_redraw = true;
                 }
             }
+            Action::NextFrame => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                        if let Some(img) = self.cache.get_image(&item.path) {
+                            let frame_count = img.frames.len();
+                            if frame_count > 1 {
+                                self.is_playing = false;
+                                self.current_frame_index =
+                                    (self.current_frame_index + count) % frame_count;
+                                needs_redraw = true;
+                            }
+                        }
+                    }
+                }
+            }
+            Action::PrevFrame => {
+                if !self.images.is_empty() {
+                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                        if let Some(img) = self.cache.get_image(&item.path) {
+                            let frame_count = img.frames.len();
+                            if frame_count > 1 {
+                                self.is_playing = false;
+                                let jump = count % frame_count;
+                                self.current_frame_index =
+                                    (self.current_frame_index + frame_count - jump) % frame_count;
+                                needs_redraw = true;
+                            }
+                        }
+                    }
+                }
+            }
             Action::NextMark => {
                 if !self.images.is_empty() && !self.marked_files.is_empty() {
                     for _ in 0..count {

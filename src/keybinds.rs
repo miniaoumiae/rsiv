@@ -19,6 +19,8 @@ pub enum Action {
     PrevMark,
     FirstImage,
     LastImage,
+    NextFrame,
+    PrevFrame,
 
     // View Mode Specific
     PanLeft,
@@ -387,6 +389,18 @@ impl Binding {
             &k.clear_count.0,
             BindingMode::Global,
             Action::ClearCount,
+        );
+        add(
+            &mut bindings,
+            &k.next_frame.0,
+            BindingMode::View,
+            Action::NextFrame,
+        );
+        add(
+            &mut bindings,
+            &k.prev_frame.0,
+            BindingMode::View,
+            Action::PrevFrame,
         );
 
         bindings
