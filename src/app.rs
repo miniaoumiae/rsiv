@@ -656,7 +656,8 @@ impl App {
                     true // dimensions changed
                 });
                 if needs_redraw {
-                    self.reset_view_for_new_image();
+                    self.off_x = 0;
+                    self.off_y = 0;
                 }
             }
             Action::RotateCCW => {
@@ -665,7 +666,8 @@ impl App {
                     true // dimensions changed
                 });
                 if needs_redraw {
-                    self.reset_view_for_new_image();
+                    self.off_x = 0;
+                    self.off_y = 0;
                 }
             }
             Action::FlipHorizontal => {
