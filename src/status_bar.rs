@@ -243,7 +243,7 @@ impl StatusBar {
         let family_name = Family::Name(&config.ui.font_family);
         let attrs = Attrs::new().family(family_name);
 
-        // --- Render Right Side ---
+        // Render Right Side
         self.scratch_buffer.clear();
         Self::render_tokens(&mut self.scratch_buffer, &self.right_tokens, &ctx);
 

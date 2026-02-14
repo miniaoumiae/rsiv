@@ -85,7 +85,7 @@ This section documents the `[ui]` table of the configuration file.
 
 > The format string for the right side of the status bar. See **Status Bar Formatting** below.
 >
-> **Default:** `"%P %s %f %z %i"`
+> **Default:** `"%P %s %f %m %z %i"`
 
 ### Status Bar Formatting
 

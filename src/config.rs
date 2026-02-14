@@ -213,7 +213,7 @@ impl Default for Ui {
             loading_color: "#3c3c3c".into(),
             error_color: "#FF0000".into(),
             status_format_left: "%p".into(),
-            status_format_right: "%P %s %f %z %i".into(),
+            status_format_right: "%P %s %f %m %z %i".into(),
         }
     }
 }
