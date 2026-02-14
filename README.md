@@ -125,7 +125,7 @@ You can find the default keybindings there as well.
 - [x] Images reload on change
 - [x] Memory usage optimization (`[options]`)
 - [x] Search/Filter mode
-- [ ] Other files options (`%f`) in the handlers ?
+- [x] Other files options (`%f`) in the handlers ?
 - [ ] Config hot reload ?
 - [ ] Mouse support ?
 - [ ] Color filter (Gamma, Brightness, ...)

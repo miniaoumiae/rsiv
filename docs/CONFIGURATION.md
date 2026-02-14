@@ -174,16 +174,31 @@ To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), follow
 **"key"** = `["command", "arg", ...]`
 
 > The key matches a single character input. The value is an array representing the command to run.
-> The special string `%f` will be replaced by the absolute path of the image file.
+> The there is the following special strings :
+>
+> %f: Absolute path of the file
+>
+> %d: Parent directory of the file
+>
+> %n: File basename without extension
+>
+> %e: File extension
+>
+> %F: File basename
 
 **Example:**
 
 ```toml
 [handlers]
-# Press Ctrl+x then g to open in GIMP
-"g" = ["gimp", "%f"]
-# Press Ctrl+x then w to set wallpaper
-"w" = ["swww", "img", "%f"]
+# Open in GIMP
+g = ["gimp", "%f"]
+# Set wallpaper with aww
+w = ["aww", "img", "%f"]
+# Convert to PNG in the exact same folder
+p = ["magick", "%f", "%d/%n.png"]
+
+# Convert to greyscale
+g=["magick", "%f", "-colorspace", "%d/%n_grayscale.%e"]
 ```
 
 ## KEYBINDINGS
@@ -201,6 +216,16 @@ Modifiers are specified by adding them before the key, separated by `+`.
 - `Super` / `Meta`
 
 **Example:** `"Ctrl+Shift+f"`
+
+## Hardcoded Bindings
+
+> `Escape`
+>
+> Cancel any active numeric prefix.
+>
+> Abort "Waiting for Handler" or Target modes.
+>
+> Exit Filter Mode and clear the active filter text (if actively typing a filter).
 
 ### Navigation and General
 
