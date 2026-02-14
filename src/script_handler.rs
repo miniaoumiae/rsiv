@@ -42,7 +42,9 @@ impl App {
                 for arg in &cmd_args {
                     let formatted = format_command_arg(arg, &current_path_str, current_path_obj);
 
-                    if formatted.contains("%M") {
+                    if formatted == "%M" {
+                        final_args.extend(paths.iter().cloned());
+                    } else if formatted.contains("%M") {
                         for p in &paths {
                             final_args.push(formatted.replace("%M", p));
                         }

@@ -171,6 +171,9 @@ This section documents the `[handlers]` table. Handlers allow you to execute ext
 
 To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), followed by the key defined below.
 
+> [!NOTE]: If you have files marked, the status bar will prompt you to choose whether to run the command on the (c)urrent file or all (m)arked files.
+> After a handler executes on marked files, the marks are automatically cleared.
+
 **"key"** = `["command", "arg", ...]`
 
 > The key matches a single character input. The value is an array representing the command to run.
@@ -180,11 +183,14 @@ To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), follow
 >
 > %d: Parent directory of the file
 >
+> %F: File basename
+>
 > %n: File basename without extension
 >
 > %e: File extension
 >
-> %F: File basename
+> %M: Bulk file list. Expands to include all targeted files
+> Using %M makes all other placeholders invalid for that command.
 
 **Example:**
 
@@ -199,6 +205,15 @@ p = ["magick", "%f", "%d/%n.png"]
 
 # Convert to greyscale
 g=["magick", "%f", "-colorspace", "%d/%n_grayscale.%e"]
+
+# Spawn an OS file picker with zenity to choose the zip destination!
+Z = [
+    "sh",
+    "-c",
+    "DEST=$(zenity --file-selection --save --title='Save Archive As' --filename='archive.zip'); if [ -n \"$DEST\" ]; then zip -j \"$DEST\" \"$@\"; fi",
+    "--",
+    "%M"
+]
 ```
 
 ## KEYBINDINGS
