@@ -10,8 +10,7 @@ pub struct FrameData {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ImageFormat {
-    Static,
-    Gif,
+    Raster,
     Svg,
 }
 

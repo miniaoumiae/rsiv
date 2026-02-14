@@ -29,15 +29,14 @@ pub fn identify_format(path: &Path) -> Result<ImageFormat, String> {
 
     match mime {
         "image/svg+xml" => Ok(ImageFormat::Svg),
-        "image/gif" => Ok(ImageFormat::Gif),
-        m if m.starts_with("image/") => Ok(ImageFormat::Static),
+        m if m.starts_with("image/") => Ok(ImageFormat::Raster),
         _ => {
-            // Manual sniffing
+            // Manual sniffing for SVG
             let content = String::from_utf8_lossy(data).to_lowercase();
             if content.contains("<svg") {
                 Ok(ImageFormat::Svg)
             } else {
-                Err(mime.to_string())
+                Err(format!("Not a recognized image format: {}", mime))
             }
         }
     }
@@ -56,7 +55,7 @@ pub fn probe_image(path: &Path, format: ImageFormat) -> Result<(u32, u32), Strin
             let size = tree.size().to_int_size();
             Ok((size.width(), size.height()))
         }
-        ImageFormat::Gif | ImageFormat::Static => {
+        ImageFormat::Raster => {
             let reader = ImageReader::open(path)
                 .map_err(|e| e.to_string())?
                 .with_guessed_format()
@@ -64,11 +63,9 @@ pub fn probe_image(path: &Path, format: ImageFormat) -> Result<(u32, u32), Strin
 
             let (mut width, mut height) = reader.into_dimensions().map_err(|e| e.to_string())?;
 
-            if format == ImageFormat::Static {
-                if let Some(orientation) = get_exif_orientation_path(path) {
-                    if [5, 6, 7, 8].contains(&orientation) {
-                        std::mem::swap(&mut width, &mut height);
-                    }
+            if let Some(orientation) = get_exif_orientation_path(path) {
+                if [5, 6, 7, 8].contains(&orientation) {
+                    std::mem::swap(&mut width, &mut height);
                 }
             }
             Ok((width, height))
@@ -255,8 +252,8 @@ fn process_request(req: LoadRequest, proxy: &EventLoopProxy<AppEvent>) {
                     let _ = proxy.send_event(AppEvent::ThumbnailLoaded(path, Arc::new(thumb)));
                 }
                 Err(e) => {
-                    let _ =
-                        proxy.send_event(AppEvent::LoadError(path, format!("Thumbnail Error: {}", e)));
+                    let _ = proxy
+                        .send_event(AppEvent::LoadError(path, format!("Thumbnail Error: {}", e)));
                 }
             }
         }
@@ -270,8 +267,7 @@ fn load_full_image(path: &Path, format: ImageFormat) -> Result<LoadedImage, Stri
 
     match format {
         ImageFormat::Svg => decode_svg(data, path),
-        ImageFormat::Gif => decode_gif(data, path),
-        ImageFormat::Static => decode_static(data),
+        ImageFormat::Raster => decode_raster(data, path),
     }
 }
 
@@ -280,8 +276,7 @@ fn load_thumbnail(
     format: ImageFormat,
     size: u32,
 ) -> Result<(u32, u32, Vec<u8>), String> {
-    // Optimization: For static images, decode and resize immediately to save memory.
-    if format == ImageFormat::Static {
+    if format == ImageFormat::Raster {
         let file = File::open(path).map_err(|e| e.to_string())?;
         let mmap = unsafe { Mmap::map(&file).map_err(|e| e.to_string())? };
         let data = &mmap[..];
@@ -290,25 +285,21 @@ fn load_thumbnail(
             .with_guessed_format()
             .map_err(|e| e.to_string())?;
 
-        // Safety limits
         let mut limits = image::Limits::default();
         limits.max_image_width = Some(32768);
         limits.max_image_height = Some(32768);
         limits.max_alloc = Some(4 * 1024 * 1024 * 1024);
         reader.limits(limits);
 
-        // Decode and resize
+        // Instantly decodes the first frame of animated GIFs/PNGs/WebPs
+        // without loading all frames into memory!
         let img = reader.decode().map_err(|e| e.to_string())?;
-
-        // Apply Orientation
         let img = apply_exif_orientation(img, data);
 
-        // Use `thumbnail` which downscales to fit within size x size, preserving aspect ratio
         let thumb = img.thumbnail(size, size);
         return Ok((thumb.width(), thumb.height(), thumb.to_rgba8().into_raw()));
     }
 
-    // Fallback for others: load full and resize
     let img = load_full_image(path, format)?;
     if let Some(first_frame) = img.frames.first() {
         if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
@@ -340,7 +331,7 @@ fn load_thumbnail(
 
 fn apply_exif_orientation(img: image::DynamicImage, data: &[u8]) -> image::DynamicImage {
     let mut reader = std::io::Cursor::new(data);
-    
+
     // Attempt to read EXIF data
     let exif = match exif::Reader::new().read_from_container(&mut reader) {
         Ok(e) => e,
@@ -358,7 +349,7 @@ fn apply_exif_orientation(img: image::DynamicImage, data: &[u8]) -> image::Dynam
 
     // Apply Transformations
     use image::imageops::{flip_horizontal, flip_vertical, rotate180, rotate270, rotate90};
-    
+
     match orientation {
         1 => img, // Normal
         2 => image::DynamicImage::ImageRgba8(flip_horizontal(&img)),
@@ -403,62 +394,81 @@ fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedImage, String> 
     })
 }
 
-fn decode_gif(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> {
-    let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(file_data))
-        .map_err(|e| format!("GIF Decoder error: {}", e))?;
+fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> {
+    let cursor = Cursor::new(file_data);
+    let format = ImageReader::new(cursor)
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.format());
 
-    let gif_frames = decoder
-        .into_frames()
-        .collect_frames()
-        .map_err(|e| format!("GIF Frame error: {}", e))?;
-
-    if gif_frames.is_empty() {
-        return decode_static(file_data);
+    // Attempt to extract frames (Handles GIF, APNG, and WebP animations)
+    let mut frames_opt = None;
+    if let Some(fmt) = format {
+        frames_opt = match fmt {
+            image::ImageFormat::Gif => image::codecs::gif::GifDecoder::new(Cursor::new(file_data))
+                .ok()
+                .and_then(|d| d.into_frames().collect_frames().ok()),
+            image::ImageFormat::Png => image::codecs::png::PngDecoder::new(Cursor::new(file_data))
+                .ok()
+                .and_then(|d| {
+                    if d.is_apng().unwrap_or(false) {
+                        d.apng()
+                            .ok()
+                            .and_then(|a| a.into_frames().collect_frames().ok())
+                    } else {
+                        None
+                    }
+                }),
+            image::ImageFormat::WebP => {
+                image::codecs::webp::WebPDecoder::new(Cursor::new(file_data))
+                    .ok()
+                    .and_then(|d| d.into_frames().collect_frames().ok())
+            }
+            _ => None,
+        };
     }
 
-    let first = gif_frames[0].buffer();
-    let (width, height) = (first.width(), first.height());
+    // If it yielded more than 1 frame, it's an animation!
+    if let Some(anim_frames) = frames_opt.filter(|f| f.len() > 1) {
+        let first = anim_frames[0].buffer();
+        let (width, height) = (first.width(), first.height());
 
-    let frames = gif_frames
-        .into_iter()
-        .map(|f| {
+        let mut frames = Vec::with_capacity(anim_frames.len());
+        for f in anim_frames {
             let (n, d) = f.delay().numer_denom_ms();
             let delay = if d == 0 {
                 Duration::from_millis(100)
             } else {
                 Duration::from_millis(n as u64 / d as u64)
             };
-            FrameData {
+            frames.push(FrameData {
                 pixels: f.into_buffer().into_raw(),
                 delay,
-            }
-        })
-        .collect();
+            });
+        }
+        return Ok(LoadedImage {
+            width,
+            height,
+            frames,
+        });
+    }
 
-    Ok(LoadedImage {
-        width,
-        height,
-        frames,
-    })
-}
-
-fn decode_static(file_data: &[u8]) -> Result<LoadedImage, String> {
-    let mut reader = ImageReader::new(Cursor::new(file_data))
+    // Static image (or a GIF/WebP with only 1 frame)
+    let cursor = Cursor::new(file_data);
+    let mut reader = ImageReader::new(cursor)
         .with_guessed_format()
         .map_err(|e| e.to_string())?;
 
-    // Safety limits
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(32768);
     limits.max_image_height = Some(32768);
-    limits.max_alloc = Some(4 * 1024 * 1024 * 1024); // 4GB limit for decompression
+    limits.max_alloc = Some(4 * 1024 * 1024 * 1024);
     reader.limits(limits);
 
     let img = reader.decode().map_err(|e| e.to_string())?;
 
-    // Apply Orientation
+    // Apply EXIF
     let img = apply_exif_orientation(img, file_data);
-
     let (width, height) = (img.width(), img.height());
 
     Ok(LoadedImage {

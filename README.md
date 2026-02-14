@@ -119,16 +119,16 @@ You can find the default keybindings there as well.
 - [x] Other view modes
 - [x] UI personalisation
 - [x] Thumbnail mode
-- [ ] Other files options (`%f`) in the handlers ?
 - [x] Script handler support (C-x)
-- [ ] Mouse support ?
 - [x] Configurable options
-- [ ] Color filter (Gamma, Brightness, ...)
 - [x] Numeric prefix like `10n`
-- [ ] Config hot reload ?
 - [x] Images reload on change
 - [x] Memory usage optimization (`[options]`)
 - [x] Search/Filter mode
+- [ ] Other files options (`%f`) in the handlers ?
+- [ ] Config hot reload ?
+- [ ] Mouse support ?
+- [ ] Color filter (Gamma, Brightness, ...)
 
 ## Credits
 
