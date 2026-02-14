@@ -123,6 +123,7 @@ pub struct Keybindings {
     pub grid_page_down: BindingList,
     pub toggle_status_bar: BindingList,
     pub toggle_animation: BindingList,
+    pub toggle_slideshow: BindingList,
     pub toggle_grid: BindingList,
     pub mark_file: BindingList,
     pub unmark_all: BindingList,
@@ -135,6 +136,7 @@ pub struct Keybindings {
     pub handler_prefix: BindingList,
     pub filter_mode: BindingList,
     pub toggle_alpha: BindingList,
+    pub clear_count: BindingList,
 }
 
 impl Default for Keybindings {
@@ -164,6 +166,7 @@ impl Default for Keybindings {
             grid_page_down: vec!["Ctrl+d"].into(),
             toggle_status_bar: vec!["b"].into(),
             toggle_animation: vec!["Ctrl+a"].into(),
+            toggle_slideshow: vec!["s"].into(),
             toggle_grid: vec!["Enter"].into(),
             mark_file: vec!["m"].into(),
             unmark_all: vec!["u"].into(),
@@ -176,6 +179,7 @@ impl Default for Keybindings {
             handler_prefix: vec!["Ctrl+x"].into(),
             filter_mode: vec!["/"].into(),
             toggle_alpha: vec!["A"].into(),
+            clear_count: vec!["Esc"].into(),
         }
     }
 }
@@ -192,6 +196,8 @@ pub struct Ui {
     pub mark_color: String,
     pub loading_color: String,
     pub error_color: String,
+    pub status_format_left: String,
+    pub status_format_right: String,
 }
 
 impl Default for Ui {
@@ -206,6 +212,8 @@ impl Default for Ui {
             mark_color: "#FF0000".into(),
             loading_color: "#3c3c3c".into(),
             error_color: "#FF0000".into(),
+            status_format_left: "%p".into(),
+            status_format_right: "%P %s %f %m %z %i".into(),
         }
     }
 }

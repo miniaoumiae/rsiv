@@ -51,6 +51,7 @@ pub enum Action {
     ToggleGrid,
     ToggleStatusBar,
     ToggleAnimation,
+    ToggleSlideshow,
     ToggleMarks,
     UnmarkAll,
     MarkFile,
@@ -58,6 +59,8 @@ pub enum Action {
     ScriptHandlerPrefix,
     FilterMode,
     ToggleAlpha,
+    Digit(usize),
+    ClearCount,
 }
 
 pub struct Binding {
@@ -80,7 +83,7 @@ impl Binding {
             BindingMode::View
         };
 
-        bindings
+        let result = bindings
             .iter()
             .find(|b| {
                 let key_matches = b.key == event.logical_key;
@@ -89,7 +92,23 @@ impl Binding {
                     && mods_match
                     && (b.mode == current_mode || b.mode == BindingMode::Global)
             })
-            .map(|b| b.action)
+            .map(|b| b.action);
+
+        if result.is_some() {
+            return result;
+        }
+
+        let has_functional_mods =
+            current_mods.control_key() || current_mods.alt_key() || current_mods.super_key();
+
+        if !has_functional_mods {
+            if let winit::keyboard::Key::Character(c) = &event.logical_key {
+                if let Ok(digit) = c.parse::<usize>() {
+                    return Some(Action::Digit(digit));
+                }
+            }
+        }
+        None
     }
 
     pub fn get_all_bindings() -> Vec<Binding> {
@@ -129,6 +148,12 @@ impl Binding {
             &k.toggle_animation.0,
             BindingMode::Global,
             Action::ToggleAnimation,
+        );
+        add(
+            &mut bindings,
+            &k.toggle_slideshow.0,
+            BindingMode::Global,
+            Action::ToggleSlideshow,
         );
         add(
             &mut bindings,
@@ -356,6 +381,12 @@ impl Binding {
             &k.toggle_alpha.0,
             BindingMode::Global,
             Action::ToggleAlpha,
+        );
+        add(
+            &mut bindings,
+            &k.clear_count.0,
+            BindingMode::Global,
+            Action::ClearCount,
         );
 
         bindings

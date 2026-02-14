@@ -1,6 +1,7 @@
 use crate::app::AppEvent;
 use crate::image_item::{FrameData, ImageFormat, ImageItem, LoadedImage};
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use exif::{In, Tag};
 use image::{AnimationDecoder, ImageBuffer, ImageReader, Rgba};
 use memmap2::Mmap;
 use rayon::prelude::*;
@@ -61,10 +62,26 @@ pub fn probe_image(path: &Path, format: ImageFormat) -> Result<(u32, u32), Strin
                 .with_guessed_format()
                 .map_err(|e| e.to_string())?;
 
-            let dims = reader.into_dimensions().map_err(|e| e.to_string())?;
-            Ok(dims)
+            let (mut width, mut height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+
+            if format == ImageFormat::Static {
+                if let Some(orientation) = get_exif_orientation_path(path) {
+                    if [5, 6, 7, 8].contains(&orientation) {
+                        std::mem::swap(&mut width, &mut height);
+                    }
+                }
+            }
+            Ok((width, height))
         }
     }
+}
+
+fn get_exif_orientation_path(path: &Path) -> Option<u32> {
+    let file = File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(&file);
+    let exif = exif::Reader::new().read_from_container(&mut reader).ok()?;
+    exif.get_field(Tag::Orientation, In::PRIMARY)
+        .and_then(|f| f.value.get_uint(0))
 }
 
 pub fn spawn_discovery_worker(
@@ -282,6 +299,10 @@ fn load_thumbnail(
 
         // Decode and resize
         let img = reader.decode().map_err(|e| e.to_string())?;
+
+        // Apply Orientation
+        let img = apply_exif_orientation(img, data);
+
         // Use `thumbnail` which downscales to fit within size x size, preserving aspect ratio
         let thumb = img.thumbnail(size, size);
         return Ok((thumb.width(), thumb.height(), thumb.to_rgba8().into_raw()));
@@ -315,6 +336,46 @@ fn load_thumbnail(
         }
     }
     Err("No frames".to_string())
+}
+
+fn apply_exif_orientation(img: image::DynamicImage, data: &[u8]) -> image::DynamicImage {
+    let mut reader = std::io::Cursor::new(data);
+    
+    // Attempt to read EXIF data
+    let exif = match exif::Reader::new().read_from_container(&mut reader) {
+        Ok(e) => e,
+        Err(_) => return img, // No EXIF or error reading it -> return original
+    };
+
+    // Get Orientation Tag
+    let orientation = match exif.get_field(Tag::Orientation, In::PRIMARY) {
+        Some(field) => match field.value.get_uint(0) {
+            Some(v @ 1..=8) => v,
+            _ => return img,
+        },
+        None => return img,
+    };
+
+    // Apply Transformations
+    use image::imageops::{flip_horizontal, flip_vertical, rotate180, rotate270, rotate90};
+    
+    match orientation {
+        1 => img, // Normal
+        2 => image::DynamicImage::ImageRgba8(flip_horizontal(&img)),
+        3 => image::DynamicImage::ImageRgba8(rotate180(&img)),
+        4 => image::DynamicImage::ImageRgba8(flip_vertical(&img)),
+        5 => {
+            let flipped = flip_horizontal(&img);
+            image::DynamicImage::ImageRgba8(rotate270(&flipped))
+        }
+        6 => image::DynamicImage::ImageRgba8(rotate90(&img)),
+        7 => {
+            let flipped = flip_horizontal(&img);
+            image::DynamicImage::ImageRgba8(rotate90(&flipped))
+        }
+        8 => image::DynamicImage::ImageRgba8(rotate270(&img)),
+        _ => img,
+    }
 }
 
 // Decoding Helpers
@@ -394,6 +455,9 @@ fn decode_static(file_data: &[u8]) -> Result<LoadedImage, String> {
     reader.limits(limits);
 
     let img = reader.decode().map_err(|e| e.to_string())?;
+
+    // Apply Orientation
+    let img = apply_exif_orientation(img, file_data);
 
     let (width, height) = (img.width(), img.height());
 

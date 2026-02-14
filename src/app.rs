@@ -2,7 +2,7 @@ use crate::cache::CacheManager;
 use crate::image_item::{ImageItem, ImageSlot};
 use crate::keybinds::Action;
 use crate::loader::Loader;
-use crate::status_bar::StatusBar;
+use crate::status_bar::{StatusBar, StatusContext};
 use crate::view_mode::ViewMode;
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashSet;
@@ -88,6 +88,11 @@ pub struct App {
     pub show_alpha: bool,
     pub marked_files: HashSet<String>,
     pub bindings: Vec<crate::keybinds::Binding>,
+    pub prefix_count: Option<usize>,
+
+    pub slideshow_on: bool,
+    pub slideshow_delay: Duration,
+    pub last_slide_time: Instant,
 }
 
 impl App {
@@ -127,7 +132,16 @@ impl App {
             show_alpha: false,
             marked_files: HashSet::new(),
             bindings: crate::keybinds::Binding::get_all_bindings(),
+            prefix_count: None,
+            slideshow_on: false,
+            slideshow_delay: Duration::from_secs(5),
+            last_slide_time: Instant::now(),
         }
+    }
+
+    pub fn pop_count(&mut self) -> usize {
+        let val = self.prefix_count.take();
+        val.unwrap_or(1).max(1)
     }
 
     fn get_available_window_size(&self) -> Option<(f64, f64)> {
@@ -268,27 +282,28 @@ impl App {
         false
     }
 
-    fn handle_navigation_action(&mut self, action: Action) -> bool {
+    fn handle_navigation_action(&mut self, action: Action, count: usize) -> bool {
         let mut needs_redraw = false;
         match action {
             Action::NextImage => {
                 if !self.images.is_empty() {
-                    self.current_index = (self.current_index + 1) % self.images.len();
+                    self.current_index = (self.current_index + count) % self.images.len();
                     self.reset_view_for_new_image();
                     needs_redraw = true;
                 }
             }
             Action::PrevImage => {
                 if !self.images.is_empty() {
-                    self.current_index =
-                        (self.current_index + self.images.len() - 1) % self.images.len();
+                    let len = self.images.len();
+                    self.current_index = (self.current_index + len - (count % len)) % len;
                     self.reset_view_for_new_image();
                     needs_redraw = true;
                 }
             }
             Action::FirstImage => {
                 if !self.images.is_empty() {
-                    self.current_index = 0;
+                    let target = if count > 1 { count - 1 } else { 0 };
+                    self.current_index = target.min(self.images.len() - 1);
                     self.reset_view_for_new_image();
                     needs_redraw = true;
                 }
@@ -302,38 +317,43 @@ impl App {
             }
             Action::NextMark => {
                 if !self.images.is_empty() && !self.marked_files.is_empty() {
-                    for i in 1..self.images.len() {
-                        let idx = (self.current_index + i) % self.images.len();
-                        if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
-                            if self
-                                .marked_files
-                                .contains(&item.path.to_string_lossy().to_string())
-                            {
-                                self.current_index = idx;
-                                self.reset_view_for_new_image();
-                                needs_redraw = true;
-                                break;
+                    for _ in 0..count {
+                        for i in 1..self.images.len() {
+                            let idx = (self.current_index + i) % self.images.len();
+                            if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
+                                if self
+                                    .marked_files
+                                    .contains(&item.path.to_string_lossy().to_string())
+                                {
+                                    self.current_index = idx;
+                                    break;
+                                }
                             }
                         }
                     }
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
                 }
             }
             Action::PrevMark => {
                 if !self.images.is_empty() && !self.marked_files.is_empty() {
-                    for i in 1..self.images.len() {
-                        let idx = (self.current_index + self.images.len() - i) % self.images.len();
-                        if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
-                            if self
-                                .marked_files
-                                .contains(&item.path.to_string_lossy().to_string())
-                            {
-                                self.current_index = idx;
-                                self.reset_view_for_new_image();
-                                needs_redraw = true;
-                                break;
+                    for _ in 0..count {
+                        for i in 1..self.images.len() {
+                            let idx =
+                                (self.current_index + self.images.len() - i) % self.images.len();
+                            if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
+                                if self
+                                    .marked_files
+                                    .contains(&item.path.to_string_lossy().to_string())
+                                {
+                                    self.current_index = idx;
+                                    break;
+                                }
                             }
                         }
                     }
+                    self.reset_view_for_new_image();
+                    needs_redraw = true;
                 }
             }
             _ => {}
@@ -341,18 +361,24 @@ impl App {
         needs_redraw
     }
 
-    fn handle_grid_movement_action(&mut self, action: Action) -> bool {
+    fn handle_grid_movement_action(&mut self, action: Action, count: usize) -> bool {
         let mut needs_redraw = false;
         match action {
             Action::GridMoveLeft => {
-                if self.current_index > 0 {
-                    self.current_index -= 1;
+                if self.current_index >= count {
+                    self.current_index -= count;
+                    needs_redraw = true;
+                } else if self.current_index > 0 {
+                    self.current_index = 0;
                     needs_redraw = true;
                 }
             }
             Action::GridMoveRight => {
-                if self.current_index < self.images.len() - 1 {
-                    self.current_index += 1;
+                if self.current_index + count < self.images.len() {
+                    self.current_index += count;
+                    needs_redraw = true;
+                } else if self.current_index < self.images.len() - 1 {
+                    self.current_index = self.images.len() - 1;
                     needs_redraw = true;
                 }
             }
@@ -362,8 +388,14 @@ impl App {
                     let cell_size = config.options.thumbnail_size + config.options.grid_pading;
                     let width = w.inner_size().width;
                     let cols = (width / cell_size).max(1);
-                    if self.current_index >= cols as usize {
-                        self.current_index -= cols as usize;
+                    let jump = cols as usize * count;
+
+                    if self.current_index >= jump {
+                        self.current_index -= jump;
+                        needs_redraw = true;
+                    } else if self.current_index >= cols as usize {
+                        // If we can't jump full count but can jump at least one row,
+                        self.current_index = self.current_index % cols as usize;
                         needs_redraw = true;
                     }
                 }
@@ -374,9 +406,21 @@ impl App {
                     let cell_size = config.options.thumbnail_size + config.options.grid_pading;
                     let width = w.inner_size().width;
                     let cols = (width / cell_size).max(1);
-                    if self.current_index + (cols as usize) < self.images.len() {
-                        self.current_index += cols as usize;
+                    let jump = cols as usize * count;
+
+                    if self.current_index + jump < self.images.len() {
+                        self.current_index += jump;
                         needs_redraw = true;
+                    } else {
+                        // Go to last row same column if possible
+                        let mut next = self.current_index;
+                        while next + (cols as usize) < self.images.len() {
+                            next += cols as usize;
+                        }
+                        if next != self.current_index {
+                            self.current_index = next;
+                            needs_redraw = true;
+                        }
                     }
                 }
             }
@@ -392,7 +436,7 @@ impl App {
                     let cols = (s.width / cell_size).max(1);
                     let rows = (h / cell_size).max(1);
                     let jump_rows = (rows / 2).max(1);
-                    let jump_idx = (jump_rows * cols) as usize;
+                    let jump_idx = (jump_rows * cols) as usize * count;
 
                     if self.current_index >= jump_idx {
                         self.current_index -= jump_idx;
@@ -415,7 +459,7 @@ impl App {
                     let cols = (s.width / cell_size).max(1);
                     let rows = (h / cell_size).max(1);
                     let jump_rows = (rows / 2).max(1);
-                    let jump_idx = (jump_rows * cols) as usize;
+                    let jump_idx = (jump_rows * cols) as usize * count;
 
                     if self.current_index + jump_idx < self.images.len() {
                         self.current_index += jump_idx;
@@ -528,47 +572,64 @@ impl App {
         needs_redraw
     }
 
-    fn handle_image_ops_action(&mut self, action: Action) -> bool {
+    fn handle_image_ops_action(&mut self, action: Action, count: usize) -> bool {
         let mut needs_redraw = false;
         match action {
             Action::MarkFile => {
                 if !self.images.is_empty() {
-                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                        let path = item.path.to_string_lossy().to_string();
-                        if self.marked_files.contains(&path) {
-                            self.marked_files.remove(&path);
-                        } else {
-                            self.marked_files.insert(path);
+                    if count > 1 {
+                        for i in 0..count {
+                            let idx = (self.current_index + i) % self.images.len();
+                            if let ImageSlot::MetadataLoaded(item) = &self.images[idx] {
+                                let path = item.path.to_string_lossy().to_string();
+                                if !self.marked_files.remove(&path) {
+                                    self.marked_files.insert(path);
+                                }
+                            }
                         }
-                        needs_redraw = true;
+                        self.current_index = (self.current_index + count) % self.images.len();
+                    } else {
+                        if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                            let path = item.path.to_string_lossy().to_string();
+                            if !self.marked_files.remove(&path) {
+                                self.marked_files.insert(path);
+                            }
+                        }
                     }
+                    needs_redraw = true;
                 }
             }
             Action::RemoveImage => {
                 if !self.images.is_empty() {
-                    let path_to_remove =
-                        if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    for _ in 0..count {
+                        if self.images.is_empty() {
+                            break;
+                        }
+                        let path_to_remove = if let ImageSlot::MetadataLoaded(item) =
+                            &self.images[self.current_index]
+                        {
                             Some(item.path.clone())
                         } else {
                             None
                         };
-                    if let Some(p) = &path_to_remove {
-                        self.marked_files.remove(&p.to_string_lossy().to_string());
-                    }
-                    self.images.remove(self.current_index);
-                    if let Some(p) = path_to_remove {
-                        self.all_images.retain(|slot| {
-                            if let ImageSlot::MetadataLoaded(item) = slot {
-                                item.path != p
-                            } else {
-                                true
-                            }
-                        });
-                    }
-                    if self.images.is_empty() {
-                        self.current_index = 0;
-                    } else if self.current_index >= self.images.len() {
-                        self.current_index = self.images.len() - 1;
+                        if let Some(p) = &path_to_remove {
+                            self.marked_files.remove(&p.to_string_lossy().to_string());
+                        }
+                        self.images.remove(self.current_index);
+                        if let Some(p) = path_to_remove {
+                            self.all_images.retain(|slot| {
+                                if let ImageSlot::MetadataLoaded(item) = slot {
+                                    item.path != p
+                                } else {
+                                    true
+                                }
+                            });
+                        }
+                        if self.images.is_empty() {
+                            self.current_index = 0;
+                        } else if self.current_index >= self.images.len() {
+                            self.current_index = self.images.len() - 1;
+                        }
                     }
                     self.reset_view_for_new_image();
                     needs_redraw = true;
@@ -595,7 +656,8 @@ impl App {
                     true // dimensions changed
                 });
                 if needs_redraw {
-                    self.reset_view_for_new_image();
+                    self.off_x = 0;
+                    self.off_y = 0;
                 }
             }
             Action::RotateCCW => {
@@ -604,7 +666,8 @@ impl App {
                     true // dimensions changed
                 });
                 if needs_redraw {
-                    self.reset_view_for_new_image();
+                    self.off_x = 0;
+                    self.off_y = 0;
                 }
             }
             Action::FlipHorizontal => {
@@ -624,9 +687,25 @@ impl App {
         needs_redraw
     }
 
-    fn handle_toggle_action(&mut self, action: Action) -> bool {
+    fn handle_toggle_action(&mut self, action: Action, prefix: Option<usize>) -> bool {
         let mut needs_redraw = false;
         match action {
+            Action::ToggleSlideshow => {
+                if let Some(n) = prefix {
+                    // User typed a number (e.g. "10s")
+                    // Set delay and force ON
+                    let secs = n.max(1) as u64;
+                    self.slideshow_delay = Duration::from_secs(secs);
+                    self.slideshow_on = true;
+                    self.last_slide_time = Instant::now();
+                } else {
+                    // User just typed "s"
+                    // Toggle state, keep existing delay
+                    self.slideshow_on = !self.slideshow_on;
+                    self.last_slide_time = Instant::now(); // Reset timer on toggle
+                }
+                needs_redraw = true;
+            }
             Action::ToggleStatusBar => {
                 self.show_status_bar = !self.show_status_bar;
                 needs_redraw = true;
@@ -655,6 +734,19 @@ impl App {
         let scale = self.get_current_scale();
 
         if !self.images.is_empty() {
+            // Slideshow Logic
+            if self.slideshow_on {
+                let now = Instant::now();
+                if now.duration_since(self.last_slide_time) >= self.slideshow_delay {
+                    self.handle_navigation_action(Action::NextImage, 1);
+                    self.last_slide_time = now;
+                }
+                // Keep the loop running for slideshow
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+
             // Request Logic
             if self.grid_mode {
                 if let Some(w) = &self.window {
@@ -832,20 +924,9 @@ impl App {
             let mut fb =
                 crate::frame_buffer::FrameBuffer::new(frame_slice, buf_w as u32, buf_h as u32);
 
-            if self.images.is_empty() {
-                self.status_bar.draw(
-                    &mut fb,
-                    100,
-                    0,
-                    0,
-                    if self.input_mode == InputMode::Filtering {
-                        &self.filter_text
-                    } else {
-                        "No matches"
-                    },
-                    false,
-                    &self.input_mode,
-                );
+            let error_storage;
+            let (path_str, is_marked, scale_percent, index, total) = if self.images.is_empty() {
+                ("No matches", false, 100, 0, 0)
             } else {
                 match &self.images[self.current_index] {
                     ImageSlot::MetadataLoaded(item) => {
@@ -853,61 +934,65 @@ impl App {
                             .marked_files
                             .contains(&item.path.to_string_lossy().to_string());
                         let is_loaded = self.cache.get_image(&item.path).is_some();
-                        let display_path = if self.input_mode == InputMode::Filtering {
-                            &self.filter_text
+                        let s = if self.grid_mode || !is_loaded {
+                            100
                         } else {
-                            item.path.to_str().unwrap_or("")
+                            (scale * 100.0) as u32
                         };
-
-                        self.status_bar.draw(
-                            &mut fb,
-                            if self.grid_mode || !is_loaded {
-                                100
-                            } else {
-                                (scale * 100.0) as u32
-                            },
+                        (
+                            item.path.to_str().unwrap_or(""),
+                            is_marked,
+                            s,
                             self.current_index + 1,
                             self.images.len(),
-                            display_path,
-                            is_marked,
-                            &self.input_mode,
-                        );
+                        )
                     }
                     ImageSlot::Error(err) => {
-                        let error_msg = format!("Error: {}", err);
-                        let display_text = if self.input_mode == InputMode::Filtering {
-                            &self.filter_text
-                        } else {
-                            &error_msg
-                        };
-                        self.status_bar.draw(
-                            &mut fb,
+                        error_storage = format!("Error: {}", err);
+                        (
+                            error_storage.as_str(),
+                            false,
                             0,
                             self.current_index + 1,
                             self.images.len(),
-                            display_text,
-                            false,
-                            &self.input_mode,
-                        );
+                        )
                     }
                     ImageSlot::PendingMetadata => {
-                        let display_text = if self.input_mode == InputMode::Filtering {
-                            &self.filter_text
-                        } else {
-                            "Discovering..."
-                        };
-                        self.status_bar.draw(
-                            &mut fb,
-                            0,
-                            self.current_index + 1,
-                            self.images.len(),
-                            display_text,
-                            false,
-                            &self.input_mode,
-                        );
+                        ("Discovering...", false, 0, self.current_index + 1, self.images.len())
                     }
                 }
-            }
+            };
+
+            let (current_frame, total_frames) = if !self.images.is_empty() {
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    if let Some(img) = self.cache.get_image(&item.path) {
+                        (self.current_frame_index + 1, img.frames.len())
+                    } else {
+                        (0, 0)
+                    }
+                } else {
+                    (0, 0)
+                }
+            } else {
+                (0, 0)
+            };
+
+            let ctx = StatusContext {
+                scale_percent,
+                index,
+                total,
+                path: path_str,
+                is_marked,
+                input_mode: &self.input_mode,
+                prefix_count: self.prefix_count,
+                slideshow_on: self.slideshow_on,
+                slideshow_delay: self.slideshow_delay,
+                filter_text: &self.filter_text,
+                current_frame,
+                total_frames,
+            };
+
+            self.status_bar.draw(&mut fb, ctx);
         }
 
         if let Err(err) = pixels.render() {
@@ -1194,16 +1279,38 @@ impl ApplicationHandler<AppEvent> for App {
                                 self.input_mode = InputMode::WaitingForHandler;
                                 needs_redraw = true;
                             }
-                            a => {
-                                if self.handle_navigation_action(a)
-                                    || self.handle_grid_movement_action(a)
-                                    || self.handle_view_action(a, old_scale)
-                                    || self.handle_image_ops_action(a)
-                                    || self.handle_toggle_action(a)
+                            Action::Digit(d) => {
+                                if d == 0 && self.prefix_count.is_none() {
+                                    // Treat '0' as FirstImage (g) if no prefix count
+                                    self.handle_navigation_action(Action::FirstImage, 1);
+                                    needs_redraw = true;
+                                } else {
+                                    let current = self.prefix_count.unwrap_or(0);
+                                    let new_count = current.saturating_mul(10).saturating_add(d);
+                                    self.prefix_count = Some(new_count);
+                                    needs_redraw = true;
+                                }
+                            }
+                            Action::ClearCount => {
+                                self.prefix_count = None;
+                                needs_redraw = true;
+                            }
+                            other_action => {
+                                // Capture raw prefix for toggles
+                                let raw_prefix = self.prefix_count;
+                                let count = self.pop_count();
+
+                                if self.handle_navigation_action(other_action, count)
+                                    || self.handle_grid_movement_action(other_action, count)
+                                    || self.handle_image_ops_action(other_action, count)
+                                    || self.handle_view_action(other_action, old_scale)
+                                    || self.handle_toggle_action(other_action, raw_prefix)
                                 {
                                     needs_redraw = true;
                                 }
-                                if matches!(a, Action::RemoveImage) && self.all_images.is_empty() {
+                                if matches!(other_action, Action::RemoveImage)
+                                    && self.all_images.is_empty()
+                                {
                                     _el.exit();
                                 }
                             }
