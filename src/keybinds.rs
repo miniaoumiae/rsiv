@@ -62,7 +62,6 @@ pub enum Action {
     FilterMode,
     ToggleAlpha,
     Digit(usize),
-    ClearCount,
 }
 
 pub struct Binding {
@@ -383,12 +382,6 @@ impl Binding {
             &k.toggle_alpha.0,
             BindingMode::Global,
             Action::ToggleAlpha,
-        );
-        add(
-            &mut bindings,
-            &k.clear_count.0,
-            BindingMode::Global,
-            Action::ClearCount,
         );
         add(
             &mut bindings,

@@ -39,11 +39,6 @@ impl App {
     }
 
     pub fn handle_modal_input(&mut self, key: &str) {
-        if key == "Esc" {
-            self.input_mode = InputMode::Normal;
-            return;
-        }
-
         match self.input_mode.clone() {
             InputMode::WaitingForHandler => {
                 let config = AppConfig::get();

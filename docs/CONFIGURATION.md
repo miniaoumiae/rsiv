@@ -428,12 +428,6 @@ Modifiers are specified by adding them before the key, separated by `+`.
 >
 > **Default:** `"D"`
 
-**clear_count** = `string` | `[string]`
-
-> Clear the current numeric prefix.
->
-> **Default:** `"Esc"`
-
 ## CREDITS AND INSPIRATION
 
 The format and style of this configuration documentation is heavily inspired by the excellent documentation of [Alacritty](https://alacritty.org/config-alacritty.html).

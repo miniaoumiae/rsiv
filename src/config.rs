@@ -136,7 +136,6 @@ pub struct Keybindings {
     pub handler_prefix: BindingList,
     pub filter_mode: BindingList,
     pub toggle_alpha: BindingList,
-    pub clear_count: BindingList,
     pub next_frame: BindingList,
     pub prev_frame: BindingList,
 }
@@ -181,7 +180,6 @@ impl Default for Keybindings {
             handler_prefix: vec!["Ctrl+x"].into(),
             filter_mode: vec!["/"].into(),
             toggle_alpha: vec!["A"].into(),
-            clear_count: vec!["Esc"].into(),
             next_frame: vec!["."].into(),
             prev_frame: vec![","].into(),
         }

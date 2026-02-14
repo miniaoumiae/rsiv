@@ -988,9 +988,13 @@ impl App {
                             self.images.len(),
                         )
                     }
-                    ImageSlot::PendingMetadata => {
-                        ("Discovering...", false, 0, self.current_index + 1, self.images.len())
-                    }
+                    ImageSlot::PendingMetadata => (
+                        "Discovering...",
+                        false,
+                        0,
+                        self.current_index + 1,
+                        self.images.len(),
+                    ),
                 }
             };
 
@@ -1241,60 +1245,86 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state.is_pressed() {
+                    use winit::keyboard::{Key, NamedKey};
                     let mut needs_redraw = false;
 
-                    // Handle Modal Inputs First
+                    // Hardcoded escape
+                    if event.logical_key == Key::Named(NamedKey::Escape) {
+                        if self.prefix_count.is_some() {
+                            self.prefix_count = None;
+                            needs_redraw = true;
+                        }
+
+                        match self.input_mode {
+                            InputMode::Filtering => {
+                                if !self.filter_text.is_empty() {
+                                    self.filter_text.clear();
+                                    self.apply_filter();
+                                }
+                                self.input_mode = InputMode::Normal;
+                                needs_redraw = true;
+                            }
+                            InputMode::WaitingForHandler | InputMode::AwaitingTarget(_) => {
+                                self.input_mode = InputMode::Normal;
+                                needs_redraw = true;
+                            }
+                            InputMode::Normal => {}
+                        }
+
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                        return;
+                    }
+
+                    // Modal inputs (Handler, Target, Filtering)
                     match self.input_mode {
                         InputMode::WaitingForHandler | InputMode::AwaitingTarget(_) => {
-                            use winit::keyboard::{Key, NamedKey};
-                            let key_to_process = match &event.logical_key {
-                                Key::Named(NamedKey::Escape) => Some("Esc"),
-                                Key::Character(c) => Some(c.as_str()),
-                                _ => None,
-                            };
-
-                            if let Some(k) = key_to_process {
-                                self.handle_modal_input(k);
-                                if let Some(window) = &self.window {
-                                    window.request_redraw();
+                            if let Key::Character(c) = &event.logical_key {
+                                self.handle_modal_input(c.as_str());
+                                if let Some(w) = &self.window {
+                                    w.request_redraw();
                                 }
                                 return;
                             }
                         }
                         InputMode::Filtering => {
-                            use winit::keyboard::{Key, NamedKey};
                             match event.logical_key {
                                 Key::Named(NamedKey::Enter) => {
+                                    // Lock in search and return to normal viewing mode
                                     self.input_mode = InputMode::Normal;
-                                }
-                                Key::Named(NamedKey::Escape) => {
-                                    self.filter_text.clear();
-                                    self.apply_filter();
-                                    self.input_mode = InputMode::Normal;
+                                    needs_redraw = true;
                                 }
                                 Key::Named(NamedKey::Backspace) => {
                                     self.filter_text.pop();
                                     self.apply_filter();
+                                    needs_redraw = true;
                                 }
                                 Key::Named(NamedKey::Space) => {
                                     self.filter_text.push(' ');
                                     self.apply_filter();
+                                    needs_redraw = true;
                                 }
                                 Key::Character(ref c) => {
                                     self.filter_text.push_str(c);
                                     self.apply_filter();
+                                    needs_redraw = true;
                                 }
                                 _ => {}
                             }
-                            if let Some(w) = &self.window {
-                                w.request_redraw();
+                            if needs_redraw {
+                                if let Some(w) = &self.window {
+                                    w.request_redraw();
+                                }
                             }
                             return;
                         }
                         InputMode::Normal => {}
                     }
 
-                    // Handle Standard Keybindings
+                    // Standard keybindings
                     let old_scale = self.get_current_scale();
                     if let Some(action) = crate::keybinds::Binding::resolve(
                         &event,
@@ -1323,10 +1353,6 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.prefix_count = Some(new_count);
                                     needs_redraw = true;
                                 }
-                            }
-                            Action::ClearCount => {
-                                self.prefix_count = None;
-                                needs_redraw = true;
                             }
                             other_action => {
                                 // Capture raw prefix for toggles
