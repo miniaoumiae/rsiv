@@ -177,19 +177,17 @@ To trigger a handler, press the `handler_prefix` key (Default: `Ctrl+x`), follow
 **"key"** = `["command", "arg", ...]`
 
 > The key matches a single character input. The value is an array representing the command to run.
-> The there is the following special strings :
+> Files are processed sequentially, similar to how `xargs` handles input, unless `%M` is used.
+> The following special placeholders are available:
 >
-> %f: Absolute path of the file
->
-> %d: Parent directory of the file
->
-> %F: File basename
->
-> %n: File basename without extension
->
-> %e: File extension
->
-> %M: Bulk file list. Expands to include all targeted files
+> - %f: Absolute path of the file
+> - %d: Parent directory of the file
+> - %F: File basename
+> - %n: File basename without extension
+> - %e: File extension
+> - %M: Bulk file list. Expands to include all targeted files
+
+> [!NOTE]
 > Using %M makes all other placeholders invalid for that command.
 
 **Example:**
@@ -392,7 +390,7 @@ Modifiers are specified by adding them before the key, separated by `+`.
 
 > Pan view down (or move cursor down in Grid).
 >
-> **Default:** `["j", "Down"]`
+> **Default:** `["j", "Dowo"]`
 
 **view_pan_up** = `string` | `[string]`
 
