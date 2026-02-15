@@ -178,7 +178,7 @@ pub fn draw_grid(
     buf_w: i32,
     buf_h: i32,
     images: &[ImageSlot],
-    cache: &mut CacheManager,
+    cache: &CacheManager,
     selected_idx: usize,
     colors: &GridColors,
     marked_paths: &std::collections::HashSet<String>,
@@ -202,7 +202,7 @@ pub fn draw_grid(
 
     clear(frame, colors.bg);
 
-    // GATHER: Collect all draw commands sequentially (satisfies LRU mutability)
+    // GATHER: Collect all draw commands sequentially.
     let draw_commands: Vec<_> = images
         .iter()
         .enumerate()

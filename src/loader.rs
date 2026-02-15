@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
+use sysinfo::System;
 use tiny_skia::Pixmap;
 use walkdir::WalkDir;
 use winit::event_loop::EventLoopProxy;
@@ -369,6 +370,33 @@ fn apply_exif_orientation(img: image::DynamicImage, data: &[u8]) -> image::Dynam
     }
 }
 
+fn check_memory_before_decode(
+    required_width: u32,
+    required_height: u32,
+    frames: u32,
+) -> Result<(), String> {
+    let required_bytes =
+        (required_width as u64) * (required_height as u64) * 4 * (frames as u64);
+
+    let mut sys = System::new();
+    sys.refresh_memory();
+    let available_bytes = sys.available_memory();
+    let total_bytes = sys.total_memory();
+
+    let config = crate::config::AppConfig::get();
+    let min_free_bytes =
+        ((total_bytes as f64) * (config.options.min_free_memory_percent / 100.0)) as u64;
+
+    if available_bytes.saturating_sub(required_bytes) < min_free_bytes {
+        return Err(format!(
+            "OOM Guard: Image requires {} MB, but OS only has {} MB safely available.",
+            required_bytes / 1024 / 1024,
+            available_bytes / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
 // Decoding Helpers
 fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedImage, String> {
     let opt = Options {
@@ -455,6 +483,14 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> 
 
     // Static image (or a GIF/WebP with only 1 frame)
     let cursor = Cursor::new(file_data);
+    let reader = ImageReader::new(cursor)
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?;
+
+    let (width, height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+    check_memory_before_decode(width, height, 1)?;
+
+    let cursor = Cursor::new(file_data);
     let mut reader = ImageReader::new(cursor)
         .with_guessed_format()
         .map_err(|e| e.to_string())?;
@@ -462,7 +498,12 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> 
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(32768);
     limits.max_image_height = Some(32768);
-    limits.max_alloc = Some(4 * 1024 * 1024 * 1024);
+    let mut sys = System::new();
+    sys.refresh_memory();
+    let config = crate::config::AppConfig::get();
+    let min_free_bytes =
+        ((sys.total_memory() as f64) * (config.options.min_free_memory_percent / 100.0)) as u64;
+    limits.max_alloc = Some(sys.available_memory().saturating_sub(min_free_bytes));
     reader.limits(limits);
 
     let img = reader.decode().map_err(|e| e.to_string())?;

@@ -153,17 +153,17 @@ This section documents the `[options]` table of the configuration file.
 >
 > **Default:** `0.1`
 
-**image_cache_size** = `integer`
+**max_memory_percent** = `float`
 
-> The maximum number of full-resolution images to keep in memory (LRU cache).
+> The maximum percentage of total system RAM that the image caches may use.
 >
-> **Default:** `8`
+> **Default:** `15.0`
 
-**thumb_cache_size** = `integer`
+**min_free_memory_percent** = `float`
 
-> The maximum number of thumbnails to keep in memory (LRU cache).
+> The minimum percentage of total system RAM that should remain free before decoding images.
 >
-> **Default:** `200`
+> **Default:** `5.0`
 
 ## HANDLERS
 

@@ -230,8 +230,8 @@ pub struct Options {
     pub grid_pading: u32,
     pub zoom_max: f64,
     pub zoom_min: f64,
-    pub image_cache_size: usize,
-    pub thumb_cache_size: usize,
+    pub max_memory_percent: f64,
+    pub min_free_memory_percent: f64,
 }
 
 impl Default for Options {
@@ -244,8 +244,8 @@ impl Default for Options {
             grid_pading: 30,
             zoom_max: 8.0,
             zoom_min: 0.1,
-            image_cache_size: 8,
-            thumb_cache_size: 200,
+            max_memory_percent: 15.0,
+            min_free_memory_percent: 5.0,
         }
     }
 }

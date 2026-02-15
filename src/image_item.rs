@@ -37,6 +37,11 @@ pub struct LoadedImage {
 }
 
 impl LoadedImage {
+    pub fn size_in_kb(&self) -> u32 {
+        let bytes: usize = self.frames.iter().map(|f| f.pixels.len()).sum();
+        ((bytes / 1024) as u32).max(1)
+    }
+
     pub fn rotate(&mut self, clockwise: bool) {
         let mut new_size = None;
         for frame in &mut self.frames {

@@ -121,10 +121,7 @@ impl App {
             filter_text: String::new(),
             loader: Loader::new(proxy.clone()),
             proxy,
-            cache: CacheManager::new(
-                config.options.image_cache_size,
-                config.options.thumb_cache_size,
-            ),
+            cache: CacheManager::new(config.options.max_memory_percent),
             pending: HashSet::new(),
             current_frame_index: 0,
             is_playing: true,
@@ -226,7 +223,7 @@ impl App {
             return false;
         };
 
-        if let Some(arc_image) = self.cache.image_cache.get(&item.path) {
+        if let Some(arc_image) = self.cache.get_image(&item.path) {
             // Use Copy-on-Write to avoid cloning if we are the sole owner
             let mut loaded_image = arc_image.clone();
 
@@ -243,7 +240,7 @@ impl App {
 
             let path = item.path.clone();
             self.cache.insert_image(path.clone(), loaded_image); // Insert the Arc
-            self.cache.thumb_cache.pop(&path);
+            self.cache.thumb_cache.invalidate(&path);
 
             return true;
         }
@@ -939,7 +936,7 @@ impl App {
                     buf_w,
                     available_h,
                     &self.images,
-                    &mut self.cache,
+                    &self.cache,
                     self.current_index,
                     &colors,
                     &self.marked_files,

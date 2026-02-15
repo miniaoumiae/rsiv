@@ -1,44 +1,56 @@
 use crate::image_item::LoadedImage;
-use lru::LruCache;
-use std::num::NonZeroUsize;
+use moka::sync::Cache;
 use std::path::PathBuf;
 use std::sync::Arc;
+use sysinfo::System;
 
 pub struct CacheManager {
-    pub image_cache: LruCache<PathBuf, Arc<LoadedImage>>,
-    pub thumb_cache: LruCache<PathBuf, Arc<(u32, u32, Vec<u8>)>>, // w, h, pixels
+    pub image_cache: Cache<PathBuf, Arc<LoadedImage>>,
+    pub thumb_cache: Cache<PathBuf, Arc<(u32, u32, Vec<u8>)>>, // w, h, pixels
 }
 
 impl CacheManager {
-    pub fn new(image_limit: usize, thumb_limit: usize) -> Self {
+    pub fn new(max_memory_percent: f64) -> Self {
+        let mut sys = System::new();
+        sys.refresh_memory();
+        let total_ram_kb = sys.total_memory() / 1024;
+        let limit_kb = ((total_ram_kb as f64) * (max_memory_percent / 100.0)) as u64;
+
+        let image_limit_kb = (limit_kb as f64 * 0.8).max(1024.0) as u64;
+        let thumb_limit_kb = (limit_kb as f64 * 0.2).max(1024.0) as u64;
+
         Self {
-            image_cache: LruCache::new(
-                NonZeroUsize::new(image_limit).unwrap_or(NonZeroUsize::new(8).unwrap()),
-            ),
-            thumb_cache: LruCache::new(
-                NonZeroUsize::new(thumb_limit).unwrap_or(NonZeroUsize::new(200).unwrap()),
-            ),
+            image_cache: Cache::builder()
+                .max_capacity(image_limit_kb)
+                .weigher(|_key, value: &Arc<LoadedImage>| -> u32 { value.size_in_kb() })
+                .build(),
+            thumb_cache: Cache::builder()
+                .max_capacity(thumb_limit_kb)
+                .weigher(|_key, value: &Arc<(u32, u32, Vec<u8>)>| -> u32 {
+                    ((value.2.len() / 1024) as u32).max(1)
+                })
+                .build(),
         }
     }
 
-    pub fn get_image(&mut self, path: &PathBuf) -> Option<Arc<LoadedImage>> {
-        self.image_cache.get(path).cloned()
+    pub fn get_image(&self, path: &PathBuf) -> Option<Arc<LoadedImage>> {
+        self.image_cache.get(path)
     }
 
-    pub fn insert_image(&mut self, path: PathBuf, image: Arc<LoadedImage>) {
-        self.image_cache.put(path, image);
+    pub fn insert_image(&self, path: PathBuf, image: Arc<LoadedImage>) {
+        self.image_cache.insert(path, image);
     }
 
-    pub fn get_thumbnail(&mut self, path: &PathBuf) -> Option<Arc<(u32, u32, Vec<u8>)>> {
-        self.thumb_cache.get(path).cloned()
+    pub fn get_thumbnail(&self, path: &PathBuf) -> Option<Arc<(u32, u32, Vec<u8>)>> {
+        self.thumb_cache.get(path)
     }
 
-    pub fn insert_thumbnail(&mut self, path: PathBuf, thumb: Arc<(u32, u32, Vec<u8>)>) {
-        self.thumb_cache.put(path, thumb);
+    pub fn insert_thumbnail(&self, path: PathBuf, thumb: Arc<(u32, u32, Vec<u8>)>) {
+        self.thumb_cache.insert(path, thumb);
     }
 
-    pub fn remove(&mut self, path: &PathBuf) {
-        self.image_cache.pop(path);
-        self.thumb_cache.pop(path);
+    pub fn remove(&self, path: &PathBuf) {
+        self.image_cache.invalidate(path);
+        self.thumb_cache.invalidate(path);
     }
 }
