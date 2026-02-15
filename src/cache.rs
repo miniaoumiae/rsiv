@@ -1,12 +1,14 @@
 use crate::image_item::LoadedImage;
 use moka::sync::Cache;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use sysinfo::System;
 
 pub struct CacheManager {
     pub image_cache: Cache<PathBuf, Arc<LoadedImage>>,
-    pub thumb_cache: Cache<PathBuf, Arc<(u32, u32, Vec<u8>)>>, // w, h, pixels
+    pub thumb_cache: Cache<PathBuf, Arc<(u32, u32, Vec<u8>)>>,
+    image_limit_kb: u64,
+    oversized_images: Mutex<Vec<(PathBuf, Arc<LoadedImage>)>>,
 }
 
 impl CacheManager {
@@ -30,14 +32,37 @@ impl CacheManager {
                     ((value.2.len() / 1024) as u32).max(1)
                 })
                 .build(),
+            image_limit_kb,
+            oversized_images: Mutex::new(Vec::with_capacity(3)),
         }
     }
 
     pub fn get_image(&self, path: &PathBuf) -> Option<Arc<LoadedImage>> {
+        if let Ok(mut oversized) = self.oversized_images.lock() {
+            if let Some(pos) = oversized.iter().position(|(p, _)| p == path) {
+                let item = oversized.remove(pos);
+                let img = item.1.clone();
+                oversized.push(item);
+                return Some(img);
+            }
+        }
         self.image_cache.get(path)
     }
 
     pub fn insert_image(&self, path: PathBuf, image: Arc<LoadedImage>) {
+        let size_kb = image.size_in_kb() as u64;
+        let safe_moka_limit = self.image_limit_kb / 64;
+
+        if size_kb > safe_moka_limit {
+            if let Ok(mut oversized) = self.oversized_images.lock() {
+                oversized.retain(|(p, _)| p != &path);
+                oversized.push((path, image));
+                if oversized.len() > 3 {
+                    oversized.remove(0);
+                }
+            }
+            return;
+        }
         self.image_cache.insert(path, image);
     }
 
@@ -50,6 +75,9 @@ impl CacheManager {
     }
 
     pub fn remove(&self, path: &PathBuf) {
+        if let Ok(mut oversized) = self.oversized_images.lock() {
+            oversized.retain(|(p, _)| p != path);
+        }
         self.image_cache.invalidate(path);
         self.thumb_cache.invalidate(path);
     }

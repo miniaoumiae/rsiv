@@ -1152,6 +1152,23 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::LoadError(path, err) => {
                 crate::rsiv_err!("Failed to load image {:?}: {}", path, err);
                 self.pending.remove(&path);
+                for slot in &mut self.all_images {
+                    if let ImageSlot::MetadataLoaded(item) = slot {
+                        if item.path == path {
+                            *slot = ImageSlot::Error(err.clone());
+                        }
+                    }
+                }
+                for slot in &mut self.images {
+                    if let ImageSlot::MetadataLoaded(item) = slot {
+                        if item.path == path {
+                            *slot = ImageSlot::Error(err.clone());
+                        }
+                    }
+                }
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
             }
             AppEvent::LoadCancelled(path) => {
                 self.pending.remove(&path);
