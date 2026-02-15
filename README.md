@@ -130,6 +130,7 @@ You can find the default keybindings there as well.
 - [ ] Config hot reload ?
 - [ ] Mouse support ?
 - [ ] Color filter (Gamma, Brightness, ...)
+- [ ] Other sorting modes (date, size..) `'[', ']'` to switch
 
 ## Credits
 
