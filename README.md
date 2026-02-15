@@ -1,28 +1,29 @@
 # rsiv: Relatively Simple Image Viewer
 
-**rsiv** is a lightweight, high-performance image viewer for linux. It aims to be a modern replacement for `nsxiv` (and `sxiv`).
+**rsiv** is a lightweight, high-performance image viewer for Linux. It aims to be a modern, stable, and easily configurable replacement for `nsxiv` (and `sxiv`).
 
 > [!WARNING]
 > This project is currently a heavy work in progress.
 >
-> - While `rsiv` mirrors most `nsxiv` keybindings, but some are no impemented of differant. You can see [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for details.
+> While `rsiv` mirrors most `nsxiv` keybindings, some are no implemented or differ slightly. See [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for details.
 
 ## Features
 
-- **Thumbnail Mode**: A grid-based view to browse directories.
-- **Constant Speed**: Uses a sliding window to load only what you see, keeping the app fast and crash-proof even with thousands of images.
-- **Live filesystem monitoring**: Automatically updates the image list when files are added, renamed, or deleted by external tools.
-- **Format Support**: Static images, animated **GIFs**, and **SVGs**.
-- **Script Handlers**: Execute external commands on images.
-- **Configuration**: Fully customizable keybindings and UI in toml.
-- **Fast Rendering**: Uses `pixels` (WebGPU) for a software-rendered frame buffer.
+- **Thumbnail Mode**: A fast, grid-based view to browse through directories.
+- **Format Support**: Supports static images, animated **GIFs/WebPs**, and **SVGs**.
+- **Instant Edits**: Image rotations and flips happen instantly without freezing the app.
+- **Script Handlers**: Easily run external shell commands on your images.
+- **Configuration**: Fully customizable keybindings and UI.
+- **Fast Rendering**: Hardware-accelerated drawing for crisp performance.
+- **Smart Memory Usage**: Automatically manages its memory based on a percentage of system's RAM.
 
 ## Key differences from `nsxiv`
 
-- Native **wayland** (and mac) support.
-- Easy to configure toml file.
-- Built-in real-time fuzzy matching based filtering.
-- Let you choose if you want to apply the handler to the current file or the marked ones (similar to `nnn`).
+- Native **Wayland** (and macOS) support.
+- Easy to configure using a `.toml` file, no need to edit C headers and recompile.
+- Built-in, real-time fuzzy matching for filtering and finding images quickly.
+- Automatically updates the image list when files are added, renamed, or deleted by other programs.
+- Choose whether you want to apply handlers to the current file or to marked files (similar to `nnn`).
 
 ## Installation
 

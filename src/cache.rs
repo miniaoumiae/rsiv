@@ -24,10 +24,12 @@ impl CacheManager {
         Self {
             image_cache: Cache::builder()
                 .max_capacity(image_limit_kb)
+                .time_to_idle(std::time::Duration::from_secs(5 * 60))
                 .weigher(|_key, value: &Arc<LoadedImage>| -> u32 { value.size_in_kb() })
                 .build(),
             thumb_cache: Cache::builder()
                 .max_capacity(thumb_limit_kb)
+                .time_to_idle(std::time::Duration::from_secs(5 * 60))
                 .weigher(|_key, value: &Arc<(u32, u32, Vec<u8>)>| -> u32 {
                     ((value.2.len() / 1024) as u32).max(1)
                 })

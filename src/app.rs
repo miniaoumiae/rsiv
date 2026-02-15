@@ -223,12 +223,9 @@ impl App {
             return false;
         };
 
-        if let Some(arc_image) = self.cache.get_image(&item.path) {
-            // Use Copy-on-Write to avoid cloning if we are the sole owner
-            let mut loaded_image = arc_image.clone();
-
-            // `make_mut` checks reference count. If 1, it returns mutable reference.
-            // If > 1, it clones the data and returns mutable reference to new data.
+        let path = item.path.clone();
+        if let Some(mut loaded_image) = self.cache.get_image(&path) {
+            self.cache.remove(&path);
             let inner = Arc::make_mut(&mut loaded_image);
 
             let dimensions_changed = f(inner);
@@ -238,9 +235,7 @@ impl App {
                 item.height = inner.height;
             }
 
-            let path = item.path.clone();
-            self.cache.insert_image(path.clone(), loaded_image); // Insert the Arc
-            self.cache.thumb_cache.invalidate(&path);
+            self.cache.insert_image(path, loaded_image);
 
             return true;
         }
