@@ -3,8 +3,6 @@
 **rsiv** is a lightweight, high-performance image viewer for Linux. It aims to be a modern, stable, and easily configurable replacement for `nsxiv` (and `sxiv`).
 
 > [!WARNING]
-> This project is currently a heavy work in progress.
->
 > While `rsiv` mirrors most `nsxiv` keybindings, some are no implemented or differ slightly. See [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for details.
 
 ## Features
