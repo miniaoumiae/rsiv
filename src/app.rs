@@ -253,7 +253,7 @@ impl App {
         // Check if path is in visible grid range
         if let Some(w) = &self.window {
             let config = crate::config::AppConfig::get();
-            let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+            let cell_size = config.options.thumbnail_size + config.options.grid_padding;
             let buf_w = w.inner_size().width;
             let buf_h = w.inner_size().height;
             let cols = (buf_w / cell_size).max(1);
@@ -421,7 +421,7 @@ impl App {
             Action::GridMoveUp => {
                 if let Some(w) = &self.window {
                     let config = crate::config::AppConfig::get();
-                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+                    let cell_size = config.options.thumbnail_size + config.options.grid_padding;
                     let width = w.inner_size().width;
                     let cols = (width / cell_size).max(1);
                     let jump = cols as usize * count;
@@ -439,7 +439,7 @@ impl App {
             Action::GridMoveDown => {
                 if let Some(w) = &self.window {
                     let config = crate::config::AppConfig::get();
-                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+                    let cell_size = config.options.thumbnail_size + config.options.grid_padding;
                     let width = w.inner_size().width;
                     let cols = (width / cell_size).max(1);
                     let jump = cols as usize * count;
@@ -463,7 +463,7 @@ impl App {
             Action::GridMovePageUp => {
                 if let Some(w) = &self.window {
                     let config = crate::config::AppConfig::get();
-                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+                    let cell_size = config.options.thumbnail_size + config.options.grid_padding;
                     let s = w.inner_size();
                     let mut h = s.height;
                     if self.show_status_bar {
@@ -486,7 +486,7 @@ impl App {
             Action::GridMovePageDown => {
                 if let Some(w) = &self.window {
                     let config = crate::config::AppConfig::get();
-                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+                    let cell_size = config.options.thumbnail_size + config.options.grid_padding;
                     let s = w.inner_size();
                     let mut h = s.height;
                     if self.show_status_bar {
@@ -786,7 +786,7 @@ impl App {
             if self.grid_mode {
                 if let Some(w) = &self.window {
                     let config = crate::config::AppConfig::get();
-                    let cell_size = config.options.thumbnail_size + config.options.grid_pading;
+                    let cell_size = config.options.thumbnail_size + config.options.grid_padding;
                     let buf_w = w.inner_size().width;
                     let buf_h = w.inner_size().height; // Approximate
                     let cols = (buf_w / cell_size).max(1);

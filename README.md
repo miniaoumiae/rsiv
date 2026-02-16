@@ -92,7 +92,7 @@ font_size = 12
 [options]
 default_view = "FitToWindow"
 thumbnail_size = 180
-grid_pading = 20
+grid_padding = 20
 
 [handlers]
 # Pressing 'Ctrl+x' then 'g' will open the current image in GIMP

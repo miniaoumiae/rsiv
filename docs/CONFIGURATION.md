@@ -135,7 +135,7 @@ This section documents the `[options]` table of the configuration file.
 >
 > **Default:** `160`
 
-**grid_pading** = `integer`
+**grid_padding** = `integer`
 
 > The padding (gap) in pixels between thumbnail cells in Grid mode.
 >

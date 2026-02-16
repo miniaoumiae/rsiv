@@ -185,7 +185,7 @@ pub fn draw_grid(
 ) {
     let config = crate::config::AppConfig::get();
     let thumb_size = config.options.thumbnail_size;
-    let padding = config.options.grid_pading;
+    let padding = config.options.grid_padding;
     let cell_size = thumb_size + padding;
 
     let cols = (buf_w as u32 / cell_size).max(1);
