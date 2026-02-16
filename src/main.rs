@@ -53,12 +53,10 @@ fn main() {
         let stdin = io::stdin();
         let handle = stdin.lock();
 
-        for line in handle.lines() {
-            if let Ok(path_str) = line {
-                let trimmed = path_str.trim();
-                if !trimmed.is_empty() {
-                    raw_paths.push(trimmed.to_string());
-                }
+        for path_str in handle.lines().map_while(Result::ok) {
+            let trimmed = path_str.trim();
+            if !trimmed.is_empty() {
+                raw_paths.push(trimmed.to_string());
             }
         }
     }

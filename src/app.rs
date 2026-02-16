@@ -303,7 +303,11 @@ impl App {
             }
             Action::FirstImage => {
                 if !self.images.is_empty() {
-                    let target = if count > 1 { count - 1 } else { 0 };
+                    let target = if count > 1 {
+                        count.saturating_sub(1)
+                    } else {
+                        0
+                    };
                     self.current_index = target.min(self.images.len() - 1);
                     self.reset_view_for_new_image();
                     needs_redraw = true;
@@ -427,7 +431,7 @@ impl App {
                         needs_redraw = true;
                     } else if self.current_index >= cols as usize {
                         // If we can't jump full count but can jump at least one row,
-                        self.current_index = self.current_index % cols as usize;
+                        self.current_index %= cols as usize;
                         needs_redraw = true;
                     }
                 }
@@ -620,12 +624,11 @@ impl App {
                             }
                         }
                         self.current_index = (self.current_index + count) % self.images.len();
-                    } else {
-                        if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                            let path = item.path.to_string_lossy().to_string();
-                            if !self.marked_files.remove(&path) {
-                                self.marked_files.insert(path);
-                            }
+                    } else if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index]
+                    {
+                        let path = item.path.to_string_lossy().to_string();
+                        if !self.marked_files.remove(&path) {
+                            self.marked_files.insert(path);
                         }
                     }
                     needs_redraw = true;

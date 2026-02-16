@@ -2,7 +2,7 @@ use crate::app::AppEvent;
 use crate::image_item::ImageItem;
 use crate::loader::{identify_format, probe_image};
 use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -53,13 +53,13 @@ pub fn spawn_watcher(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<
     });
 }
 
-fn handle_change(path: &PathBuf, proxy: &EventLoopProxy<AppEvent>) {
+fn handle_change(path: &Path, proxy: &EventLoopProxy<AppEvent>) {
     if path.exists() {
         match identify_format(path) {
             Ok(format) => match probe_image(path, format) {
                 Ok((width, height)) => {
                     let item = ImageItem {
-                        path: path.clone(),
+                        path: path.to_path_buf(),
                         width,
                         height,
                         format,
@@ -68,7 +68,7 @@ fn handle_change(path: &PathBuf, proxy: &EventLoopProxy<AppEvent>) {
                 }
                 Err(_) => {
                     // Could be a file change that made it invalid, treat as delete/error
-                    let _ = proxy.send_event(AppEvent::FileDeleted(path.clone()));
+                    let _ = proxy.send_event(AppEvent::FileDeleted(path.to_path_buf()));
                 }
             },
             Err(_) => {
@@ -77,6 +77,6 @@ fn handle_change(path: &PathBuf, proxy: &EventLoopProxy<AppEvent>) {
         }
     } else {
         // File Deleted
-        let _ = proxy.send_event(AppEvent::FileDeleted(path.clone()));
+        let _ = proxy.send_event(AppEvent::FileDeleted(path.to_path_buf()));
     }
 }

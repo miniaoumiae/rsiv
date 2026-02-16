@@ -28,12 +28,10 @@ impl App {
 
         let paths: Vec<String> = if on_marked {
             self.marked_files.drain().collect()
+        } else if current_path_str.is_empty() {
+            vec![]
         } else {
-            if current_path_str.is_empty() {
-                vec![]
-            } else {
-                vec![current_path_str.clone()]
-            }
+            vec![current_path_str.clone()]
         };
 
         if paths.is_empty() || cmd_args.is_empty() {
