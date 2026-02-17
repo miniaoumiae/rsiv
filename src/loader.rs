@@ -85,6 +85,8 @@ fn get_exif_orientation_path(path: &Path) -> Option<u32> {
 pub fn spawn_discovery_worker(
     paths: Vec<String>,
     recursive: bool,
+    max_depth: Option<usize>,
+    include_hidden: bool,
     proxy: EventLoopProxy<AppEvent>,
 ) {
     thread::spawn(move || {
@@ -93,12 +95,29 @@ pub fn spawn_discovery_worker(
             if !Path::new(&p).exists() {
                 continue;
             }
-            let mut walker = WalkDir::new(p);
-            if !recursive {
-                walker = walker.max_depth(1);
+
+            let mut builder = WalkDir::new(&p);
+            if let Some(d) = max_depth {
+                builder = builder.max_depth(d);
+            } else if !recursive {
+                builder = builder.max_depth(1);
             }
+
+            let walker = builder.into_iter().filter_entry(move |e| {
+                if include_hidden {
+                    return true;
+                }
+                // Always include the root path provided by the user, even if it is hidden
+                if e.depth() == 0 {
+                    return true;
+                }
+                !e.file_name()
+                    .to_str()
+                    .map(|s| s.starts_with('.'))
+                    .unwrap_or(false)
+            });
+
             for entry in walker
-                .into_iter()
                 .filter_map(|e| e.ok())
                 .filter(|e| e.path().is_file())
             {

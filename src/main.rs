@@ -37,6 +37,14 @@ struct Cli {
     #[arg(short, long)]
     quiet: bool,
 
+    /// Include hidden files and directories
+    #[arg(short = 'H', long)]
+    hidden: bool,
+
+    /// Maximum recursion depth
+    #[arg(short = 'd', long, requires = "recursive")]
+    max_depth: Option<usize>,
+
     /// Image paths or directories
     #[arg(required = false)]
     paths: Vec<String>,
@@ -82,7 +90,13 @@ fn main() {
 
     let mut app = App::new(vec![], cli.thumbnail, proxy.clone());
 
-    loader::spawn_discovery_worker(canonical_paths.clone(), cli.recursive, proxy.clone());
+    loader::spawn_discovery_worker(
+        canonical_paths.clone(),
+        cli.recursive,
+        cli.max_depth,
+        cli.hidden,
+        proxy.clone(),
+    );
     watcher::spawn_watcher(canonical_paths, cli.recursive, proxy.clone());
 
     let _ = event_loop.run_app(&mut app);

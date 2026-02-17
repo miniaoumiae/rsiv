@@ -1189,12 +1189,14 @@ impl ApplicationHandler<AppEvent> for App {
                     self.all_images[idx] = ImageSlot::MetadataLoaded(new_item.clone());
 
                     // If currently visible, trigger redraw
-                    if let ImageSlot::MetadataLoaded(current_item) =
-                        &self.images[self.current_index]
-                    {
-                        if current_item.path == path {
-                            if let Some(w) = &self.window {
-                                w.request_redraw();
+                    if !self.images.is_empty() && self.current_index < self.images.len() {
+                        if let ImageSlot::MetadataLoaded(current_item) =
+                            &self.images[self.current_index]
+                        {
+                            if current_item.path == path {
+                                if let Some(w) = &self.window {
+                                    w.request_redraw();
+                                }
                             }
                         }
                     }
@@ -1232,12 +1234,15 @@ impl ApplicationHandler<AppEvent> for App {
                 });
 
                 // If the deleted image was the current one, standard logic applies
-                let was_current =
+                let was_current = if !self.images.is_empty() && self.current_index < self.images.len() {
                     if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                         item.path == path
                     } else {
                         false
-                    };
+                    }
+                } else {
+                    false
+                };
 
                 self.apply_filter();
 
