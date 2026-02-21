@@ -57,6 +57,42 @@ This section documents the `[ui]` table of the configuration file.
 >
 > **Default:** `"#FFFFFF"`
 
+**selected_border_width** = `integer`
+
+> The thickness (in pixels) of the selection border in Grid/Thumbnail mode.
+>
+> **Default:** `4`
+
+**selected_border_padding** = `integer`
+
+> The gap (in pixels) between the thumbnail and its selection border in Grid/Thumbnail mode.
+>
+> **Default:** `1`
+
+**mark_indicator_size** = `integer`
+
+> The size (in pixels) of the square mark indicator in Grid/Thumbnail mode.
+>
+> **Default:** `12`
+
+**checkerboard_size** = `integer`
+
+> The size (in pixels) of each checkerboard cell used for alpha transparency.
+>
+> **Default:** `16`
+
+**checkerboard_color_1** = `string`
+
+> The first checkerboard color used for alpha transparency.
+>
+> **Default:** `"#CCCCCC"`
+
+**checkerboard_color_2** = `string`
+
+> The second checkerboard color used for alpha transparency.
+>
+> **Default:** `"#999999"`
+
 **mark_color** = `string`
 
 > The color of the indicator tag for files that have been "marked" (selected).
@@ -141,6 +177,18 @@ This section documents the `[options]` table of the configuration file.
 >
 > **Default:** `30`
 
+**zoom_step** = `float`
+
+> The multiplier used for each zoom in/out step.
+>
+> **Default:** `1.1`
+
+**pan_step** = `integer`
+
+> The number of pixels to move per pan action.
+>
+> **Default:** `50`
+
 **zoom_max** = `float`
 
 > The maximum zoom level allowed (e.g., 8.0 is 800%).
@@ -164,6 +212,30 @@ This section documents the `[options]` table of the configuration file.
 > The minimum percentage of total system RAM that should remain free before decoding images.
 >
 > **Default:** `5.0`
+
+**autoplay_animations** = `true` | `false`
+
+> When true, animated images start playing automatically.
+>
+> **Default:** `true`
+
+**preload_ahead** = `integer`
+
+> The number of images to prefetch ahead of the current image in single-image view.
+>
+> **Default:** `1`
+
+**preload_behind** = `integer`
+
+> The number of images to prefetch behind the current image in single-image view.
+>
+> **Default:** `1`
+
+**slideshow_default_delay** = `integer`
+
+> The default slideshow delay in seconds.
+>
+> **Default:** `5`
 
 ## HANDLERS
 

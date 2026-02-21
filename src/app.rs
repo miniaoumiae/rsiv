@@ -124,7 +124,7 @@ impl App {
             cache: CacheManager::new(config.options.max_memory_percent),
             pending: HashSet::new(),
             current_frame_index: 0,
-            is_playing: true,
+            is_playing: config.options.autoplay_animations,
             last_update: Instant::now(),
             frame_timer: Duration::ZERO,
             input_mode: InputMode::Normal,
@@ -140,7 +140,7 @@ impl App {
             bindings: crate::keybinds::Binding::get_all_bindings(),
             prefix_count: None,
             slideshow_on: false,
-            slideshow_delay: Duration::from_secs(5),
+            slideshow_delay: Duration::from_secs(config.options.slideshow_default_delay),
             last_slide_time: Instant::now(),
         }
     }
@@ -207,12 +207,56 @@ impl App {
         }
     }
 
+    pub fn clamp_offsets(&mut self) {
+        if self.images.is_empty() || self.grid_mode {
+            return;
+        }
+
+        let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] else {
+            return;
+        };
+
+        let Some((buf_w, buf_h)) = self.get_available_window_size() else {
+            return;
+        };
+
+        if buf_w <= 0.0 || buf_h <= 0.0 {
+            return;
+        }
+
+        let scale = self.get_current_scale();
+        let scaled_w = item.width as f64 * scale;
+        let scaled_h = item.height as f64 * scale;
+
+        let config = crate::config::AppConfig::get();
+
+        if config.options.clamp_pan {
+            // Strict clamping: Image edges cannot enter the window.
+            // If the image is smaller than the window, lock it to the center.
+            let max_off_x = ((scaled_w - buf_w) / 2.0).max(0.0);
+            let max_off_y = ((scaled_h - buf_h) / 2.0).max(0.0);
+
+            self.off_x = self.off_x.clamp(-max_off_x as i32, max_off_x as i32);
+            self.off_y = self.off_y.clamp(-max_off_y as i32, max_off_y as i32);
+        } else {
+            // Loose clamping: Keep at least 10px of the image on the screen.
+            let keep_px = 10.0;
+
+            let max_off_x = ((buf_w + scaled_w) / 2.0 - keep_px).max(0.0);
+            let max_off_y = ((buf_h + scaled_h) / 2.0 - keep_px).max(0.0);
+
+            self.off_x = self.off_x.clamp(-max_off_x as i32, max_off_x as i32);
+            self.off_y = self.off_y.clamp(-max_off_y as i32, max_off_y as i32);
+        }
+    }
+
     fn reset_view_for_new_image(&mut self) {
+        let config = crate::config::AppConfig::get();
         self.off_x = 0;
         self.off_y = 0;
         self.current_frame_index = 0;
         self.frame_timer = Duration::ZERO;
-        self.is_playing = true;
+        self.is_playing = config.options.autoplay_animations;
     }
 
     fn mutate_current_image<F>(&mut self, f: F) -> bool
@@ -514,8 +558,13 @@ impl App {
     fn handle_view_action(&mut self, action: Action, old_scale: f64) -> bool {
         let mut needs_redraw = false;
         let mut changed_scale = false;
-        let step = 50;
         let config = crate::config::AppConfig::get();
+        let step = config.options.pan_step;
+        let zoom_step = if config.options.zoom_step <= 0.0 {
+            1.0
+        } else {
+            config.options.zoom_step
+        };
 
         match action {
             Action::ResetView => {
@@ -588,11 +637,11 @@ impl App {
                 needs_redraw = true;
             }
             Action::ZoomIn => {
-                self.mode = ViewMode::Zoom((old_scale * 1.1).min(config.options.zoom_max));
+                self.mode = ViewMode::Zoom((old_scale * zoom_step).min(config.options.zoom_max));
                 changed_scale = true;
             }
             Action::ZoomOut => {
-                self.mode = ViewMode::Zoom((old_scale / 1.1).max(config.options.zoom_min));
+                self.mode = ViewMode::Zoom((old_scale / zoom_step).max(config.options.zoom_min));
                 changed_scale = true;
             }
             _ => {}
@@ -603,6 +652,10 @@ impl App {
             self.off_x = (self.off_x as f64 * (new_scale / old_scale)) as i32;
             self.off_y = (self.off_y as f64 * (new_scale / old_scale)) as i32;
             needs_redraw = true;
+        }
+
+        if needs_redraw {
+            self.clamp_offsets();
         }
 
         needs_redraw
@@ -826,6 +879,7 @@ impl App {
             } else {
                 // Single view
                 if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    let config = crate::config::AppConfig::get();
                     if self.cache.get_image(&item.path).is_none()
                         && !self.pending.contains(&item.path)
                     {
@@ -833,11 +887,13 @@ impl App {
                         self.loader.request_image(item.path.clone(), item.format);
                     }
 
-                    // Pre-fetch next
-                    if self.current_index + 1 < self.images.len() {
-                        if let ImageSlot::MetadataLoaded(next) =
-                            &self.images[self.current_index + 1]
-                        {
+                    // Pre-fetch ahead
+                    for offset in 1..=config.options.preload_ahead {
+                        let idx = self.current_index + offset;
+                        if idx >= self.images.len() {
+                            break;
+                        }
+                        if let ImageSlot::MetadataLoaded(next) = &self.images[idx] {
                             if self.cache.get_image(&next.path).is_none()
                                 && !self.pending.contains(&next.path)
                             {
@@ -846,11 +902,12 @@ impl App {
                             }
                         }
                     }
-                    // Pre-fetch prev
-                    if self.current_index > 0 {
-                        if let ImageSlot::MetadataLoaded(prev) =
-                            &self.images[self.current_index - 1]
-                        {
+                    // Pre-fetch behind
+                    for offset in 1..=config.options.preload_behind {
+                        let Some(idx) = self.current_index.checked_sub(offset) else {
+                            break;
+                        };
+                        if let ImageSlot::MetadataLoaded(prev) = &self.images[idx] {
                             if self.cache.get_image(&prev.path).is_none()
                                 && !self.pending.contains(&prev.path)
                             {
@@ -1280,6 +1337,7 @@ impl ApplicationHandler<AppEvent> for App {
                         let _ = pixels.resize_buffer(new_size.width, new_size.height);
                     }
                 }
+                self.clamp_offsets();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }

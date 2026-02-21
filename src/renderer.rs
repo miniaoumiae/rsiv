@@ -38,6 +38,7 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
     let off_x = params.off_x;
     let off_y = params.off_y;
     let show_alpha = params.show_alpha;
+    let config = crate::config::AppConfig::get();
 
     let img_w = image.width as f64;
     let img_h = image.height as f64;
@@ -72,10 +73,10 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
 
     let global_src_x_start_f = (start_x as f64 - tl_x) * inv_scale;
 
-    // Ckeckboard colors
-    let check_size = 16;
-    let check_color_1 = 204u8; // Light gray (0xCC)
-    let check_color_2 = 153u8; // Darker gray (0x99)
+    // Checkerboard colors
+    let check_size = config.ui.checkerboard_size.max(1) as i32;
+    let check_color_1 = crate::utils::parse_color(&config.ui.checkerboard_color_1);
+    let check_color_2 = crate::utils::parse_color(&config.ui.checkerboard_color_2);
 
     frame
         .par_chunks_exact_mut((buf_w * 4) as usize)
@@ -124,12 +125,12 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
                                     let is_dark =
                                         ((current_screen_x / check_size) + (y / check_size)) % 2
                                             == 0;
-                                    let c = if is_dark {
+                                    let (r, g, b) = if is_dark {
                                         check_color_2
                                     } else {
                                         check_color_1
                                     };
-                                    (c as u32, c as u32, c as u32)
+                                    (r as u32, g as u32, b as u32)
                                 } else {
                                     // Use existing background color
                                     (
@@ -155,14 +156,14 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
                             else if show_alpha {
                                 let is_dark =
                                     ((current_screen_x / check_size) + (y / check_size)) % 2 == 0;
-                                let c = if is_dark {
+                                let (r, g, b) = if is_dark {
                                     check_color_2
                                 } else {
                                     check_color_1
                                 };
-                                dest_pixel[0] = c;
-                                dest_pixel[1] = c;
-                                dest_pixel[2] = c;
+                                dest_pixel[0] = r;
+                                dest_pixel[1] = g;
+                                dest_pixel[2] = b;
                                 dest_pixel[3] = 255;
                             }
                         }
@@ -187,6 +188,9 @@ pub fn draw_grid(
     let thumb_size = config.options.thumbnail_size;
     let padding = config.options.grid_padding;
     let cell_size = thumb_size + padding;
+    let border_gap = config.ui.selected_border_padding as i32;
+    let border_thickness = config.ui.selected_border_width as i32;
+    let mark_size = config.ui.mark_indicator_size as i32;
 
     let cols = (buf_w as u32 / cell_size).max(1);
 
@@ -382,14 +386,13 @@ pub fn draw_grid(
                         buf_w,
                         Rect(*base_t_x, *base_t_y, p_w, p_h),
                         color,
+                        border_thickness,
                     );
                 }
 
                 // Draw Selection Border
                 if *is_selected {
-                    let border_gap = 1;
-                    let thickness = 4;
-                    let offset = border_gap + thickness;
+                    let offset = border_gap + border_thickness;
 
                     let (target_w, target_h, target_x, target_y) = if let Some(data) = thumb_data {
                         let (t_w, t_h, _) = &**data;
@@ -419,11 +422,12 @@ pub fn draw_grid(
                             target_h + offset * 2,
                         ),
                         colors.accent,
+                        border_thickness,
                     );
                 }
 
                 // Draw Mark
-                if *is_marked {
+                if *is_marked && mark_size > 0 {
                     let (target_w, target_h, target_x, target_y) = if let Some(data) = thumb_data {
                         let (t_w, t_h, _) = &**data;
                         let t_x = x_cell + (thumb_size_i32 - *t_w as i32) / 2;
@@ -444,11 +448,10 @@ pub fn draw_grid(
                         (p_w, p_h, *base_t_x, *base_t_y)
                     };
 
-                    let mark_size = 12;
-                    let border_gap = 1;
-                    let thickness = 4;
-                    let m_x = target_x + target_w + border_gap + thickness / 2 - mark_size / 2;
-                    let m_y = target_y + target_h + border_gap + thickness / 2 - mark_size / 2;
+                    let m_x = target_x + target_w + border_gap + border_thickness / 2
+                        - mark_size / 2;
+                    let m_y = target_y + target_h + border_gap + border_thickness / 2
+                        - mark_size / 2;
 
                     if y >= m_y && y < m_y + mark_size {
                         let start_draw_x = m_x.max(0);
@@ -475,9 +478,13 @@ fn draw_border_scanline(
     buf_w: i32,
     rect: Rect,
     color: (u8, u8, u8),
+    thickness: i32,
 ) {
     let Rect(rx, ry, rw, rh) = rect;
-    let thickness = 4;
+    let thickness = thickness.max(0);
+    if thickness == 0 {
+        return;
+    }
 
     let in_vertical_range = y >= ry && y < ry + rh;
     if !in_vertical_range {
