@@ -27,6 +27,10 @@ pub enum Action {
     PanRight,
     PanUp,
     PanDown,
+    PanToLeftEdge,
+    PanToRightEdge,
+    PanToTopEdge,
+    PanToBottomEdge,
     ZoomIn,
     ZoomOut,
     ZoomReset,
@@ -337,6 +341,30 @@ impl Binding {
             &k.view_pan_down.0,
             BindingMode::View,
             Action::PanDown,
+        );
+        add(
+            &mut bindings,
+            &k.view_pan_left_edge.0,
+            BindingMode::View,
+            Action::PanToLeftEdge,
+        );
+        add(
+            &mut bindings,
+            &k.view_pan_right_edge.0,
+            BindingMode::View,
+            Action::PanToRightEdge,
+        );
+        add(
+            &mut bindings,
+            &k.view_pan_top_edge.0,
+            BindingMode::View,
+            Action::PanToTopEdge,
+        );
+        add(
+            &mut bindings,
+            &k.view_pan_bottom_edge.0,
+            BindingMode::View,
+            Action::PanToBottomEdge,
         );
 
         // Grid Mode: Move

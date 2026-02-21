@@ -233,20 +233,21 @@ impl App {
         if config.options.clamp_pan {
             // Strict clamping: Image edges cannot enter the window.
             // If the image is smaller than the window, lock it to the center.
-            let max_off_x = ((scaled_w - buf_w) / 2.0).max(0.0);
-            let max_off_y = ((scaled_h - buf_h) / 2.0).max(0.0);
+            let max_off_x = ((scaled_w - buf_w) / 2.0).max(0.0).floor() as i32;
+            let max_off_y = ((scaled_h - buf_h) / 2.0).max(0.0).floor() as i32;
 
-            self.off_x = self.off_x.clamp(-max_off_x as i32, max_off_x as i32);
-            self.off_y = self.off_y.clamp(-max_off_y as i32, max_off_y as i32);
+            self.off_x = self.off_x.clamp(-max_off_x, max_off_x);
+            self.off_y = self.off_y.clamp(-max_off_y, max_off_y);
         } else {
-            // Loose clamping: Keep at least 10px of the image on the screen.
-            let keep_px = 10.0;
+            // Loose clamping: Keep at least 50px (or the whole image if it's smaller) on screen.
+            let keep_x = 50.0_f64.min(scaled_w);
+            let keep_y = 50.0_f64.min(scaled_h);
 
-            let max_off_x = ((buf_w + scaled_w) / 2.0 - keep_px).max(0.0);
-            let max_off_y = ((buf_h + scaled_h) / 2.0 - keep_px).max(0.0);
+            let max_off_x = ((buf_w + scaled_w) / 2.0 - keep_x).max(0.0).floor() as i32;
+            let max_off_y = ((buf_h + scaled_h) / 2.0 - keep_y).max(0.0).floor() as i32;
 
-            self.off_x = self.off_x.clamp(-max_off_x as i32, max_off_x as i32);
-            self.off_y = self.off_y.clamp(-max_off_y as i32, max_off_y as i32);
+            self.off_x = self.off_x.clamp(-max_off_x, max_off_x);
+            self.off_y = self.off_y.clamp(-max_off_y, max_off_y);
         }
     }
 
@@ -626,6 +627,38 @@ impl App {
             }
             Action::PanDown => {
                 self.off_y -= step;
+                needs_redraw = true;
+            }
+            Action::PanToLeftEdge => {
+                let (buf_w, _) = self.get_available_window_size().unwrap_or((0.0, 0.0));
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    let scaled_w = item.width as f64 * old_scale;
+                    self.off_x = ((scaled_w - buf_w) / 2.0) as i32;
+                }
+                needs_redraw = true;
+            }
+            Action::PanToRightEdge => {
+                let (buf_w, _) = self.get_available_window_size().unwrap_or((0.0, 0.0));
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    let scaled_w = item.width as f64 * old_scale;
+                    self.off_x = -((scaled_w - buf_w) / 2.0) as i32;
+                }
+                needs_redraw = true;
+            }
+            Action::PanToTopEdge => {
+                let (_, buf_h) = self.get_available_window_size().unwrap_or((0.0, 0.0));
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    let scaled_h = item.height as f64 * old_scale;
+                    self.off_y = ((scaled_h - buf_h) / 2.0) as i32;
+                }
+                needs_redraw = true;
+            }
+            Action::PanToBottomEdge => {
+                let (_, buf_h) = self.get_available_window_size().unwrap_or((0.0, 0.0));
+                if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                    let scaled_h = item.height as f64 * old_scale;
+                    self.off_y = -((scaled_h - buf_h) / 2.0) as i32;
+                }
                 needs_redraw = true;
             }
             Action::ZoomReset => {

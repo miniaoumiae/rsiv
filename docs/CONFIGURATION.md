@@ -424,7 +424,7 @@ Modifiers are specified by adding them before the key, separated by `+`.
 
 > Fit image to window height.
 >
-> **Default:** `"H"`
+> **Default:** `"V"`
 
 **rotate_cw** = `string` | `[string]`
 
@@ -475,6 +475,30 @@ Modifiers are specified by adding them before the key, separated by `+`.
 > Pan view right (or move cursor right in Grid).
 >
 > **Default:** `["l", "Right"]`
+
+**view_pan_left_edge** = `string` | `[string]`
+
+> Snap view to the left edge.
+>
+> **Default:** `["H", "Shift+Left"]`
+
+**view_pan_bottom_edge** = `string` | `[string]`
+
+> Snap view to the bottom edge.
+>
+> **Default:** `["J", "Shift+Down"]`
+
+**view_pan_top_edge** = `string` | `[string]`
+
+> Snap view to the top edge.
+>
+> **Default:** `["K", "Shift+Up"]`
+
+**view_pan_right_edge** = `string` | `[string]`
+
+> Snap view to the right edge.
+>
+> **Default:** `["L", "Shift+Right"]`
 
 ### Toggles and Actions
 
