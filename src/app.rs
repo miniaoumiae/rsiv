@@ -40,7 +40,7 @@ pub enum AppEvent {
     MetadataLoaded(usize, ImageItem),
     MetadataError(usize, PathBuf, String),
     DiscoveryComplete,
-    ImagePixelsLoaded(PathBuf, Arc<crate::image_item::LoadedImage>),
+    ImagePixelsLoaded(PathBuf, Arc<crate::image_item::LoadedAsset>),
     ThumbnailLoaded(PathBuf, Arc<(u32, u32, Vec<u8>)>),
     LoadError(PathBuf, String),
     LoadCancelled(PathBuf),
@@ -262,7 +262,7 @@ impl App {
 
     fn mutate_current_image<F>(&mut self, f: F) -> bool
     where
-        F: FnOnce(&mut crate::image_item::LoadedImage) -> bool,
+        F: FnOnce(&mut crate::image_item::LoadedAsset) -> bool,
     {
         let Some(ImageSlot::MetadataLoaded(item)) = self.images.get_mut(self.current_index) else {
             return false;
@@ -276,8 +276,20 @@ impl App {
             let dimensions_changed = f(inner);
 
             if dimensions_changed {
-                item.width = inner.width;
-                item.height = inner.height;
+                match inner {
+                    crate::image_item::LoadedAsset::Raster { width, height, .. } => {
+                        item.width = *width;
+                        item.height = *height;
+                    }
+                    crate::image_item::LoadedAsset::Vector {
+                        base_width,
+                        base_height,
+                        ..
+                    } => {
+                        item.width = *base_width;
+                        item.height = *base_height;
+                    }
+                }
             }
 
             self.cache.insert_image(path, loaded_image);
@@ -369,7 +381,7 @@ impl App {
                 if !self.images.is_empty() {
                     if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                         if let Some(img) = self.cache.get_image(&item.path) {
-                            let frame_count = img.frames.len();
+                            let frame_count = img.frame_count();
                             if frame_count > 1 {
                                 self.is_playing = false;
                                 self.current_frame_index =
@@ -384,7 +396,7 @@ impl App {
                 if !self.images.is_empty() {
                     if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                         if let Some(img) = self.cache.get_image(&item.path) {
-                            let frame_count = img.frames.len();
+                            let frame_count = img.frame_count();
                             if frame_count > 1 {
                                 self.is_playing = false;
                                 let jump = count % frame_count;
@@ -772,20 +784,14 @@ impl App {
                 needs_redraw = true;
             }
             Action::RotateCW => {
-                needs_redraw = self.mutate_current_image(|img| {
-                    img.rotate(true);
-                    true // dimensions changed
-                });
+                needs_redraw = self.mutate_current_image(|img| img.rotate(true));
                 if needs_redraw {
                     self.off_x = 0;
                     self.off_y = 0;
                 }
             }
             Action::RotateCCW => {
-                needs_redraw = self.mutate_current_image(|img| {
-                    img.rotate(false);
-                    true // dimensions changed
-                });
+                needs_redraw = self.mutate_current_image(|img| img.rotate(false));
                 if needs_redraw {
                     self.off_x = 0;
                     self.off_y = 0;
@@ -794,13 +800,13 @@ impl App {
             Action::FlipHorizontal => {
                 needs_redraw = self.mutate_current_image(|img| {
                     img.flip_horizontal();
-                    false // dimensions didn't change
+                    false
                 });
             }
             Action::FlipVertical => {
                 needs_redraw = self.mutate_current_image(|img| {
                     img.flip_vertical();
-                    false // dimensions didn't change
+                    false
                 });
             }
             _ => {}
@@ -960,11 +966,11 @@ impl App {
                         let dt = now.duration_since(self.last_update);
                         self.last_update = now;
 
-                        let frame_count = loaded_image.frames.len();
+                        let frame_count = loaded_image.frame_count();
 
                         if self.is_playing && frame_count > 1 {
                             self.frame_timer += dt;
-                            let current_delay = loaded_image.frames[self.current_frame_index].delay;
+                            let current_delay = loaded_image.frame_delay(self.current_frame_index);
                             let effective_delay = if current_delay.is_zero() {
                                 Duration::from_millis(100)
                             } else {
@@ -1032,7 +1038,7 @@ impl App {
             } else if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                 if let Some(loaded_image) = self.cache.get_image(&item.path) {
                     let params = crate::renderer::DrawImageParams {
-                        image: &loaded_image,
+                        asset: &loaded_image,
                         frame_idx: self.current_frame_index,
                         scale,
                         off_x: self.off_x,
@@ -1095,7 +1101,7 @@ impl App {
             let (current_frame, total_frames) = if !self.images.is_empty() {
                 if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
                     if let Some(img) = self.cache.get_image(&item.path) {
-                        (self.current_frame_index + 1, img.frames.len())
+                        (self.current_frame_index + 1, img.frame_count())
                     } else {
                         (0, 0)
                     }

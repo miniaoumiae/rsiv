@@ -1,14 +1,14 @@
-use crate::image_item::LoadedImage;
+use crate::image_item::LoadedAsset;
 use moka::sync::Cache;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use sysinfo::System;
 
 pub struct CacheManager {
-    pub image_cache: Cache<PathBuf, Arc<LoadedImage>>,
+    pub image_cache: Cache<PathBuf, Arc<LoadedAsset>>,
     pub thumb_cache: Cache<PathBuf, Arc<(u32, u32, Vec<u8>)>>,
     image_limit_kb: u64,
-    oversized_images: Mutex<Vec<(PathBuf, Arc<LoadedImage>)>>,
+    oversized_images: Mutex<Vec<(PathBuf, Arc<LoadedAsset>)>>,
 }
 
 impl CacheManager {
@@ -25,7 +25,7 @@ impl CacheManager {
             image_cache: Cache::builder()
                 .max_capacity(image_limit_kb)
                 .time_to_idle(std::time::Duration::from_secs(5 * 60))
-                .weigher(|_key, value: &Arc<LoadedImage>| -> u32 { value.size_in_kb() })
+                .weigher(|_key, value: &Arc<LoadedAsset>| -> u32 { value.size_in_kb() })
                 .build(),
             thumb_cache: Cache::builder()
                 .max_capacity(thumb_limit_kb)
@@ -39,7 +39,7 @@ impl CacheManager {
         }
     }
 
-    pub fn get_image(&self, path: &PathBuf) -> Option<Arc<LoadedImage>> {
+    pub fn get_image(&self, path: &PathBuf) -> Option<Arc<LoadedAsset>> {
         if let Ok(mut oversized) = self.oversized_images.lock() {
             if let Some(pos) = oversized.iter().position(|(p, _)| p == path) {
                 let item = oversized.remove(pos);
@@ -51,7 +51,7 @@ impl CacheManager {
         self.image_cache.get(path)
     }
 
-    pub fn insert_image(&self, path: PathBuf, image: Arc<LoadedImage>) {
+    pub fn insert_image(&self, path: PathBuf, image: Arc<LoadedAsset>) {
         let size_kb = image.size_in_kb() as u64;
         let safe_moka_limit = self.image_limit_kb / 64;
 

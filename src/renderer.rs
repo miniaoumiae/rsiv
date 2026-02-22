@@ -1,6 +1,7 @@
 use crate::cache::CacheManager;
-use crate::image_item::{ImageSlot, LoadedImage};
+use crate::image_item::{ImageSlot, LoadedAsset};
 use rayon::prelude::*;
+use tiny_skia::PixmapMut;
 
 pub struct GridColors {
     pub bg: (u8, u8, u8),
@@ -11,7 +12,7 @@ pub struct GridColors {
 }
 
 pub struct DrawImageParams<'a> {
-    pub image: &'a LoadedImage,
+    pub asset: &'a LoadedAsset,
     pub frame_idx: usize,
     pub scale: f64,
     pub off_x: i32,
@@ -32,146 +33,194 @@ pub fn clear(frame: &mut [u8], color: (u8, u8, u8)) {
 }
 
 pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImageParams) {
-    let image = params.image;
-    let frame_idx = params.frame_idx;
     let scale = params.scale;
-    let off_x = params.off_x;
-    let off_y = params.off_y;
     let show_alpha = params.show_alpha;
     let config = crate::config::AppConfig::get();
-
-    let img_w = image.width as f64;
-    let img_h = image.height as f64;
-
-    let scaled_w = img_w * scale;
-    let scaled_h = img_h * scale;
-
-    let tl_x = (buf_w as f64 / 2.0) - (scaled_w / 2.0) + off_x as f64;
-    let tl_y = (buf_h as f64 / 2.0) - (scaled_h / 2.0) + off_y as f64;
-
-    let start_x = tl_x.max(0.0) as i32;
-    let start_y = tl_y.max(0.0) as i32;
-    let end_x = (tl_x + scaled_w).min(buf_w as f64) as i32;
-    let end_y = (tl_y + scaled_h).min(buf_h as f64) as i32;
-
-    if end_x <= start_x || end_y <= start_y {
-        return;
-    }
-
-    let inv_scale = 1.0 / scale;
-    let src_width = image.width as i32;
-    let src_height = image.height as i32;
-
-    // Safety check for empty frames
-    if image.frames.is_empty() {
-        return;
-    }
-
-    // Safety check for frame index
-    let safe_frame_idx = frame_idx % image.frames.len();
-    let current_pixels = &image.frames[safe_frame_idx].pixels;
-
-    let global_src_x_start_f = (start_x as f64 - tl_x) * inv_scale;
 
     // Checkerboard colors
     let check_size = config.ui.checkerboard_size.max(1) as i32;
     let check_color_1 = crate::utils::parse_color(&config.ui.checkerboard_color_1);
     let check_color_2 = crate::utils::parse_color(&config.ui.checkerboard_color_2);
 
-    frame
-        .par_chunks_exact_mut((buf_w * 4) as usize)
-        .enumerate()
-        .for_each(|(y, row_pixels)| {
-            let y = y as i32;
+    match params.asset {
+        LoadedAsset::Raster {
+            width,
+            height,
+            frames,
+        } => {
+            let img_w = *width as f64;
+            let img_h = *height as f64;
 
-            if y < start_y || y >= end_y {
+            let scaled_w = img_w * scale;
+            let scaled_h = img_h * scale;
+
+            let tl_x = (buf_w as f64 / 2.0) - (scaled_w / 2.0) + params.off_x as f64;
+            let tl_y = (buf_h as f64 / 2.0) - (scaled_h / 2.0) + params.off_y as f64;
+
+            let start_x = tl_x.max(0.0) as i32;
+            let start_y = tl_y.max(0.0) as i32;
+            let end_x = (tl_x + scaled_w).min(buf_w as f64) as i32;
+            let end_y = (tl_y + scaled_h).min(buf_h as f64) as i32;
+
+            if end_x <= start_x || end_y <= start_y {
                 return;
             }
 
-            let src_y = ((y as f64 - tl_y) * inv_scale) as i32;
+            let inv_scale = 1.0 / scale;
+            let src_width = *width as i32;
+            let src_height = *height as i32;
 
-            if src_y >= 0 && src_y < src_height {
-                let src_row_start = (src_y * src_width) as usize * 4;
-                let mut src_x_f = global_src_x_start_f;
+            if frames.is_empty() {
+                return;
+            }
 
-                let draw_slice_start = (start_x as usize) * 4;
-                let draw_slice_end = (end_x as usize) * 4;
+            let safe_frame_idx = params.frame_idx % frames.len();
+            let current_pixels = &frames[safe_frame_idx].pixels;
 
-                if draw_slice_end > row_pixels.len() {
-                    return;
-                }
+            let global_src_x_start_f = (start_x as f64 - tl_x) * inv_scale;
 
-                let dest_slice = &mut row_pixels[draw_slice_start..draw_slice_end];
+            frame
+                .par_chunks_exact_mut((buf_w * 4) as usize)
+                .enumerate()
+                .for_each(|(y, row_pixels)| {
+                    let y = y as i32;
 
-                for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
-                    let current_screen_x = start_x + i as i32; // Absolute X coordinate for checkerboard
-                    let src_x = src_x_f as i32;
+                    if y < start_y || y >= end_y {
+                        return;
+                    }
 
-                    if src_x >= 0 && src_x < src_width {
-                        let src_idx = src_row_start + (src_x as usize * 4);
-                        if src_idx + 4 <= current_pixels.len() {
-                            let src_p = &current_pixels[src_idx..src_idx + 4];
-                            let src_a = src_p[3] as u32;
+                    let src_y = ((y as f64 - tl_y) * inv_scale) as i32;
 
-                            if src_a == 255 {
-                                // Opaque
-                                dest_pixel.copy_from_slice(src_p);
-                            } else if src_a > 0 {
-                                // Transparent
+                    if src_y >= 0 && src_y < src_height {
+                        let src_row_start = (src_y * src_width) as usize * 4;
+                        let mut src_x_f = global_src_x_start_f;
 
-                                // Determine background color (Checkerboard or Window BG)
-                                let (bg_r, bg_g, bg_b) = if show_alpha {
-                                    // Calculate checkerboard based on screen coordinates
-                                    let is_dark =
-                                        ((current_screen_x / check_size) + (y / check_size)) % 2
+                        let draw_slice_start = (start_x as usize) * 4;
+                        let draw_slice_end = (end_x as usize) * 4;
+
+                        if draw_slice_end > row_pixels.len() {
+                            return;
+                        }
+
+                        let dest_slice = &mut row_pixels[draw_slice_start..draw_slice_end];
+
+                        for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
+                            let current_screen_x = start_x + i as i32;
+                            let src_x = src_x_f as i32;
+
+                            if src_x >= 0 && src_x < src_width {
+                                let src_idx = src_row_start + (src_x as usize * 4);
+                                if src_idx + 4 <= current_pixels.len() {
+                                    let src_p = &current_pixels[src_idx..src_idx + 4];
+                                    let src_a = src_p[3] as u32;
+
+                                    if src_a == 255 {
+                                        dest_pixel.copy_from_slice(src_p);
+                                    } else if src_a > 0 {
+                                        let (bg_r, bg_g, bg_b) = if show_alpha {
+                                            let is_dark = ((current_screen_x / check_size)
+                                                + (y / check_size))
+                                                % 2
+                                                == 0;
+                                            let (r, g, b) = if is_dark {
+                                                check_color_2
+                                            } else {
+                                                check_color_1
+                                            };
+                                            (r as u32, g as u32, b as u32)
+                                        } else {
+                                            (
+                                                dest_pixel[0] as u32,
+                                                dest_pixel[1] as u32,
+                                                dest_pixel[2] as u32,
+                                            )
+                                        };
+
+                                        let inv_a = 255 - src_a;
+
+                                        dest_pixel[0] =
+                                            ((src_p[0] as u32 * src_a + bg_r * inv_a) / 255) as u8;
+                                        dest_pixel[1] =
+                                            ((src_p[1] as u32 * src_a + bg_g * inv_a) / 255) as u8;
+                                        dest_pixel[2] =
+                                            ((src_p[2] as u32 * src_a + bg_b * inv_a) / 255) as u8;
+                                        dest_pixel[3] = 255;
+                                    } else if show_alpha {
+                                        let is_dark = ((current_screen_x / check_size)
+                                            + (y / check_size))
+                                            % 2
                                             == 0;
-                                    let (r, g, b) = if is_dark {
-                                        check_color_2
-                                    } else {
-                                        check_color_1
-                                    };
-                                    (r as u32, g as u32, b as u32)
-                                } else {
-                                    // Use existing background color
-                                    (
-                                        dest_pixel[0] as u32,
-                                        dest_pixel[1] as u32,
-                                        dest_pixel[2] as u32,
-                                    )
-                                };
-
-                                let inv_a = 255 - src_a;
-
-                                // Blend
-                                dest_pixel[0] =
-                                    ((src_p[0] as u32 * src_a + bg_r * inv_a) / 255) as u8;
-                                dest_pixel[1] =
-                                    ((src_p[1] as u32 * src_a + bg_g * inv_a) / 255) as u8;
-                                dest_pixel[2] =
-                                    ((src_p[2] as u32 * src_a + bg_b * inv_a) / 255) as u8;
-                                dest_pixel[3] = 255;
+                                        let (r, g, b) =
+                                            if is_dark { check_color_2 } else { check_color_1 };
+                                        dest_pixel[0] = r;
+                                        dest_pixel[1] = g;
+                                        dest_pixel[2] = b;
+                                        dest_pixel[3] = 255;
+                                    }
+                                }
                             }
-                            // If src_a == 0, we do nothing (leave existing background),
-                            // UNLESS we want to force draw the checkerboard over the cleared bg
-                            else if show_alpha {
-                                let is_dark =
-                                    ((current_screen_x / check_size) + (y / check_size)) % 2 == 0;
-                                let (r, g, b) = if is_dark {
-                                    check_color_2
-                                } else {
-                                    check_color_1
-                                };
-                                dest_pixel[0] = r;
-                                dest_pixel[1] = g;
-                                dest_pixel[2] = b;
-                                dest_pixel[3] = 255;
-                            }
+                            src_x_f += inv_scale;
                         }
                     }
-                    src_x_f += inv_scale;
+                });
+        }
+        LoadedAsset::Vector {
+            tree,
+            base_width,
+            base_height,
+            internal_transform,
+        } => {
+            let scaled_w = *base_width as f64 * params.scale;
+            let scaled_h = *base_height as f64 * params.scale;
+
+            let tl_x = (buf_w as f64 / 2.0) - (scaled_w / 2.0) + params.off_x as f64;
+            let tl_y = (buf_h as f64 / 2.0) - (scaled_h / 2.0) + params.off_y as f64;
+
+            if show_alpha {
+                let start_x = tl_x.max(0.0) as i32;
+                let start_y = tl_y.max(0.0) as i32;
+                let end_x = (tl_x + scaled_w).min(buf_w as f64) as i32;
+                let end_y = (tl_y + scaled_h).min(buf_h as f64) as i32;
+
+                if end_x > start_x && end_y > start_y {
+                    frame
+                        .par_chunks_exact_mut((buf_w * 4) as usize)
+                        .enumerate()
+                        .for_each(|(y, row_pixels)| {
+                            let y = y as i32;
+                            if y >= start_y && y < end_y {
+                                let draw_slice_start = (start_x as usize) * 4;
+                                let draw_slice_end = (end_x as usize) * 4;
+                                let dest_slice =
+                                    &mut row_pixels[draw_slice_start..draw_slice_end];
+
+                                for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
+                                    let current_screen_x = start_x + i as i32;
+                                    let is_dark = ((current_screen_x / check_size)
+                                        + (y / check_size))
+                                        % 2
+                                        == 0;
+                                    let (r, g, b) =
+                                        if is_dark { check_color_2 } else { check_color_1 };
+                                    dest_pixel[0] = r;
+                                    dest_pixel[1] = g;
+                                    dest_pixel[2] = b;
+                                    dest_pixel[3] = 255;
+                                }
+                            }
+                        });
                 }
             }
-        });
+
+            if let Some(mut pixmap) = PixmapMut::from_bytes(frame, buf_w as u32, buf_h as u32) {
+                let mut ts = *internal_transform;
+                ts = ts.post_scale(params.scale as f32, params.scale as f32);
+                ts = ts.post_translate(tl_x as f32, tl_y as f32);
+
+                resvg::render(tree, ts, &mut pixmap);
+            }
+        }
+    }
 }
 
 pub fn draw_grid(

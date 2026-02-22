@@ -1,11 +1,11 @@
 use crate::app::AppEvent;
-use crate::image_item::{FrameData, ImageFormat, ImageItem, LoadedImage};
+use crate::image_item::{FrameData, ImageFormat, ImageItem, LoadedAsset};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use exif::{In, Tag};
-use image::{AnimationDecoder, ImageBuffer, ImageReader, Rgba};
+use image::{AnimationDecoder, ImageReader};
 use memmap2::Mmap;
 use rayon::prelude::*;
-use resvg::usvg::{self, Options, Tree};
+use resvg::usvg::{Options, Tree};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Cursor, Read};
@@ -14,7 +14,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 use sysinfo::System;
-use tiny_skia::Pixmap;
+use tiny_skia::{Pixmap, Transform};
 use walkdir::WalkDir;
 use winit::event_loop::EventLoopProxy;
 
@@ -280,7 +280,7 @@ fn process_request(req: LoadRequest, proxy: &EventLoopProxy<AppEvent>) {
     }
 }
 
-fn load_full_image(path: &Path, format: ImageFormat) -> Result<LoadedImage, String> {
+fn load_full_image(path: &Path, format: ImageFormat) -> Result<LoadedAsset, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mmap = unsafe { Mmap::map(&file).map_err(|e| e.to_string())? };
     let data = &mmap[..];
@@ -320,33 +320,31 @@ fn load_thumbnail(
         return Ok((thumb.width(), thumb.height(), thumb.to_rgba8().into_raw()));
     }
 
-    let img = load_full_image(path, format)?;
-    if let Some(first_frame) = img.frames.first() {
-        if let Some(img_buf) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
-            img.width,
-            img.height,
-            first_frame.pixels.clone(),
-        ) {
-            let aspect = img.width as f64 / img.height as f64;
-            let (nwidth, nheight) = if aspect >= 1.0 {
-                (size, (size as f64 / aspect) as u32)
-            } else {
-                ((size as f64 * aspect) as u32, size)
-            };
+    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+    let opt = Options {
+        resources_dir: path.parent().map(|p| p.to_path_buf()),
+        fontdb: Arc::new(crate::utils::get_svg_font_db().clone()),
+        ..Default::default()
+    };
+    let tree = Tree::from_data(&data, &opt).map_err(|e| format!("SVG Parse Error: {}", e))?;
+    let size_i = tree.size().to_int_size();
+    let (base_w, base_h) = (size_i.width(), size_i.height());
 
-            let nwidth = nwidth.max(1);
-            let nheight = nheight.max(1);
+    let aspect = base_w as f64 / base_h as f64;
+    let (nwidth, nheight) = if aspect >= 1.0 {
+        (size, (size as f64 / aspect) as u32)
+    } else {
+        ((size as f64 * aspect) as u32, size)
+    };
+    let nwidth = nwidth.max(1);
+    let nheight = nheight.max(1);
 
-            let thumb = image::imageops::resize(
-                &img_buf,
-                nwidth,
-                nheight,
-                image::imageops::FilterType::Triangle,
-            );
-            return Ok((thumb.width(), thumb.height(), thumb.into_raw()));
-        }
-    }
-    Err("No frames".to_string())
+    let mut pixmap = Pixmap::new(nwidth, nheight).ok_or("Failed to create pixmap")?;
+    let scale = nwidth as f32 / base_w as f32;
+    let ts = Transform::from_scale(scale, scale);
+    resvg::render(&tree, ts, &mut pixmap.as_mut());
+
+    Ok((nwidth, nheight, pixmap.take()))
 }
 
 fn apply_exif_orientation(img: image::DynamicImage, data: &[u8]) -> image::DynamicImage {
@@ -417,7 +415,7 @@ fn check_memory_before_decode(
 }
 
 // Decoding Helpers
-fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedImage, String> {
+fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedAsset, String> {
     let opt = Options {
         resources_dir: path_obj.parent().map(|p| p.to_path_buf()),
         fontdb: Arc::new(crate::utils::get_svg_font_db().clone()),
@@ -426,22 +424,15 @@ fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedImage, String> 
 
     let tree = Tree::from_data(file_data, &opt).map_err(|e| format!("SVG Parse Error: {}", e))?;
     let size = tree.size().to_int_size();
-    let (width, height) = (size.width(), size.height());
-
-    let mut pixmap = Pixmap::new(width, height).ok_or("Failed to create pixmap")?;
-    resvg::render(&tree, usvg::Transform::default(), &mut pixmap.as_mut());
-
-    Ok(LoadedImage {
-        width,
-        height,
-        frames: vec![FrameData {
-            pixels: pixmap.take(),
-            delay: Duration::MAX,
-        }],
+    Ok(LoadedAsset::Vector {
+        tree: Arc::new(tree),
+        base_width: size.width(),
+        base_height: size.height(),
+        internal_transform: Transform::default(),
     })
 }
 
-fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> {
+fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedAsset, String> {
     let cursor = Cursor::new(file_data);
     let format = ImageReader::new(cursor)
         .with_guessed_format()
@@ -493,7 +484,7 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> 
                 delay,
             });
         }
-        return Ok(LoadedImage {
+        return Ok(LoadedAsset::Raster {
             width,
             height,
             frames,
@@ -515,8 +506,8 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> 
         .map_err(|e| e.to_string())?;
 
     let mut limits = image::Limits::default();
-    limits.max_image_width = Some(32768);
-    limits.max_image_height = Some(32768);
+    limits.max_image_width = Some(65536);
+    limits.max_image_height = Some(65536);
     let mut sys = System::new();
     sys.refresh_memory();
     let config = crate::config::AppConfig::get();
@@ -531,7 +522,7 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedImage, String> 
     let img = apply_exif_orientation(img, file_data);
     let (width, height) = (img.width(), img.height());
 
-    Ok(LoadedImage {
+    Ok(LoadedAsset::Raster {
         width,
         height,
         frames: vec![FrameData {
