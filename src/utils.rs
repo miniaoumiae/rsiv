@@ -22,6 +22,24 @@ pub fn parse_color(hex: &str) -> (u8, u8, u8) {
     }
 }
 
+pub fn parse_color_rgba(hex: &str) -> (u8, u8, u8, u8) {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() == 6 {
+        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+        (r, g, b, 255)
+    } else if hex.len() == 8 {
+        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+        let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255);
+        (r, g, b, a)
+    } else {
+        (0, 0, 0, 255)
+    }
+}
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub static QUIET_MODE: AtomicBool = AtomicBool::new(false);

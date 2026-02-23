@@ -344,35 +344,54 @@ impl App {
         }
     }
 
-    fn build_next_cursor(event_loop: &ActiveEventLoop) -> Option<CustomCursor> {
-        const W: u16 = 48;
-        const H: u16 = 48;
-        const TIP_X: i32 = 42;
-        const MID_Y: i32 = 24;
-        const HOT_X: u16 = TIP_X as u16;
-        const HOT_Y: u16 = MID_Y as u16;
-        let head_len = 18;
-        let head_base_x = TIP_X - head_len;
-        let head_half_height = 14;
-        let tail_left = 8;
-        let tail_half_height = 6;
+    fn build_cursor(event_loop: &ActiveEventLoop, is_next: bool) -> Option<CustomCursor> {
+        let config = crate::config::AppConfig::get();
+        let size = config.ui.cursor_size.max(16);
+        let inner_color = crate::utils::parse_color_rgba(&config.ui.cursor_inner_color);
+        let border_color = crate::utils::parse_color_rgba(&config.ui.cursor_border_color);
+        let use_shadow = config.ui.cursor_shadow;
+        let border_thickness = config.ui.cursor_border_width as i32;
 
-        let w = W as i32;
-        let h = H as i32;
+        let w = size as i32;
+        let h = size as i32;
+
+        let tip_x = if is_next { w * 7 / 8 } else { w * 1 / 8 };
+        let mid_y = h / 2;
+        let head_len = w * 3 / 8;
+        let head_base_x = if is_next { tip_x - head_len } else { tip_x + head_len };
+        let head_half_height = h * 5 / 16;
+        let tail_half_height = h * 2 / 16;
+        let tail_end_x = if is_next { w * 2 / 8 } else { w * 6 / 8 };
+
+        let hot_x = tip_x as u16;
+        let hot_y = mid_y as u16;
+
         let mut fill = vec![false; (w * h) as usize];
 
         for y in 0..h {
-            let dy = (y - MID_Y).abs();
+            let dy = (y - mid_y).abs();
+
             if dy <= head_half_height {
-                let x_max = TIP_X - (dy * head_len / head_half_height);
-                for x in head_base_x..=x_max {
+                let dx = dy * head_len / head_half_height;
+                let (min_x, max_x) = if is_next {
+                    (head_base_x, tip_x - dx)
+                } else {
+                    (tip_x + dx, head_base_x)
+                };
+                for x in min_x..=max_x {
                     if x >= 0 && x < w {
                         fill[(y * w + x) as usize] = true;
                     }
                 }
             }
+
             if dy <= tail_half_height {
-                for x in tail_left..head_base_x {
+                let (min_x, max_x) = if is_next {
+                    (tail_end_x, head_base_x)
+                } else {
+                    (head_base_x, tail_end_x)
+                };
+                for x in min_x..=max_x {
                     if x >= 0 && x < w {
                         fill[(y * w + x) as usize] = true;
                     }
@@ -380,103 +399,90 @@ impl App {
             }
         }
 
-        let mut rgba = Vec::with_capacity((W as usize) * (H as usize) * 4);
-        for y in 0..h {
-            for x in 0..w {
-                let idx = (y * w + x) as usize;
-                if fill[idx] {
-                    rgba.extend_from_slice(&[0, 0, 0, 0]);
-                } else {
+        let mut border = vec![false; (w * h) as usize];
+        if border_thickness > 0 {
+            for y in 0..h {
+                for x in 0..w {
+                    if fill[(y * w + x) as usize] {
+                        continue;
+                    }
+
                     let mut is_border = false;
-                    for ny in (y - 1)..=(y + 1) {
-                        for nx in (x - 1)..=(x + 1) {
-                            if nx < 0 || ny < 0 || nx >= w || ny >= h {
-                                continue;
+                    for ny in (y - border_thickness)..=(y + border_thickness) {
+                        for nx in (x - border_thickness)..=(x + border_thickness) {
+                            if nx >= 0 && ny >= 0 && nx < w && ny < h {
+                                if fill[(ny * w + nx) as usize] {
+                                    is_border = true;
+                                    break;
+                                }
                             }
-                            let nidx = (ny * w + nx) as usize;
-                            if fill[nidx] {
-                                is_border = true;
+                        }
+                        if is_border {
+                            break;
+                        }
+                    }
+                    border[(y * w + x) as usize] = is_border;
+                }
+            }
+        }
+
+        let mut shadow = vec![0.0f32; (w * h) as usize];
+        if use_shadow {
+            let shadow_radius = (size / 12).max(2) as i32;
+            let shadow_offset_y = (size / 24).max(1) as i32;
+
+            for y in 0..h {
+                for x in 0..w {
+                    if fill[(y * w + x) as usize] || border[(y * w + x) as usize] {
+                        for sy in (y - shadow_radius)..=(y + shadow_radius) {
+                            for sx in (x - shadow_radius)..=(x + shadow_radius) {
+                                let target_y = sy + shadow_offset_y;
+                                let target_x = sx;
+                                if target_x >= 0 && target_y >= 0 && target_x < w && target_y < h {
+                                    let dist =
+                                        (((x - sx).pow(2) + (y - sy).pow(2)) as f32).sqrt();
+                                    if dist <= shadow_radius as f32 {
+                                        let intensity = 1.0 - (dist / shadow_radius as f32);
+                                        let idx = (target_y * w + target_x) as usize;
+                                        shadow[idx] = shadow[idx].max(intensity * 0.6);
+                                    }
+                                }
                             }
                         }
                     }
-                    if is_border {
-                        rgba.extend_from_slice(&[255, 255, 255, 255]);
-                    } else {
-                        rgba.extend_from_slice(&[0, 0, 0, 0]);
-                    }
                 }
             }
         }
 
-        let source = CustomCursor::from_rgba(rgba, W, H, HOT_X, HOT_Y).ok()?;
-        Some(event_loop.create_custom_cursor(source))
-    }
-
-    fn build_prev_cursor(event_loop: &ActiveEventLoop) -> Option<CustomCursor> {
-        const W: u16 = 48;
-        const H: u16 = 48;
-        const TIP_X: i32 = 6;
-        const MID_Y: i32 = 24;
-        const HOT_X: u16 = TIP_X as u16;
-        const HOT_Y: u16 = MID_Y as u16;
-        let head_len = 18;
-        let head_base_x = TIP_X + head_len;
-        let head_half_height = 14;
-        let tail_right = 40;
-        let tail_half_height = 6;
-
-        let w = W as i32;
-        let h = H as i32;
-        let mut fill = vec![false; (w * h) as usize];
-
-        for y in 0..h {
-            let dy = (y - MID_Y).abs();
-            if dy <= head_half_height {
-                let x_min = TIP_X + (dy * head_len / head_half_height);
-                for x in x_min..=head_base_x {
-                    if x >= 0 && x < w {
-                        fill[(y * w + x) as usize] = true;
-                    }
-                }
-            }
-            if dy <= tail_half_height {
-                for x in (head_base_x + 1)..=tail_right {
-                    if x >= 0 && x < w {
-                        fill[(y * w + x) as usize] = true;
-                    }
-                }
-            }
-        }
-
-        let mut rgba = Vec::with_capacity((W as usize) * (H as usize) * 4);
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
         for y in 0..h {
             for x in 0..w {
                 let idx = (y * w + x) as usize;
-                if fill[idx] {
-                    rgba.extend_from_slice(&[0, 0, 0, 0]);
+
+                if border[idx] {
+                    rgba.extend_from_slice(&[
+                        border_color.0,
+                        border_color.1,
+                        border_color.2,
+                        border_color.3,
+                    ]);
+                } else if fill[idx] {
+                    rgba.extend_from_slice(&[
+                        inner_color.0,
+                        inner_color.1,
+                        inner_color.2,
+                        inner_color.3,
+                    ]);
+                } else if use_shadow && shadow[idx] > 0.0 {
+                    let alpha = (shadow[idx] * 255.0) as u8;
+                    rgba.extend_from_slice(&[0, 0, 0, alpha]);
                 } else {
-                    let mut is_border = false;
-                    for ny in (y - 1)..=(y + 1) {
-                        for nx in (x - 1)..=(x + 1) {
-                            if nx < 0 || ny < 0 || nx >= w || ny >= h {
-                                continue;
-                            }
-                            let nidx = (ny * w + nx) as usize;
-                            if fill[nidx] {
-                                is_border = true;
-                            }
-                        }
-                    }
-                    if is_border {
-                        rgba.extend_from_slice(&[255, 255, 255, 255]);
-                    } else {
-                        rgba.extend_from_slice(&[0, 0, 0, 0]);
-                    }
+                    rgba.extend_from_slice(&[0, 0, 0, 0]);
                 }
             }
         }
 
-        let source = CustomCursor::from_rgba(rgba, W, H, HOT_X, HOT_Y).ok()?;
+        let source = CustomCursor::from_rgba(rgba, size, size, hot_x, hot_y).ok()?;
         Some(event_loop.create_custom_cursor(source))
     }
 
@@ -1399,8 +1405,8 @@ impl ApplicationHandler<AppEvent> for App {
 
         let scale_factor = window.scale_factor();
         self.status_bar.set_scale(scale_factor as f32);
-        self.next_cursor = Self::build_next_cursor(event_loop);
-        self.prev_cursor = Self::build_prev_cursor(event_loop);
+        self.next_cursor = Self::build_cursor(event_loop, true);
+        self.prev_cursor = Self::build_cursor(event_loop, false);
     }
 
     fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {

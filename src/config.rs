@@ -214,6 +214,11 @@ pub struct Ui {
     pub error_color: String,
     pub status_format_left: String,
     pub status_format_right: String,
+    pub cursor_size: u16,
+    pub cursor_inner_color: String,
+    pub cursor_border_color: String,
+    pub cursor_border_width: u16,
+    pub cursor_shadow: bool,
 }
 
 impl Default for Ui {
@@ -236,6 +241,11 @@ impl Default for Ui {
             error_color: "#FF0000".into(),
             status_format_left: "%p".into(),
             status_format_right: "%P %s %f %m %z %i".into(),
+            cursor_size: 48,
+            cursor_inner_color: "#000000FF".into(),
+            cursor_border_color: "#FFFFFFFF".into(),
+            cursor_border_width: 1,
+            cursor_shadow: true,
         }
     }
 }
