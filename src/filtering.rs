@@ -5,14 +5,14 @@ use nucleo::{Config, Matcher, Utf32Str};
 
 impl App {
     pub fn apply_filter(&mut self) {
-        if self.filter_text.is_empty() {
-            self.images = self.all_images.clone();
+        if self.gallery.filter_text.is_empty() {
+            self.gallery.filtered = self.gallery.all.clone();
             return;
         }
 
         let mut matcher = Matcher::new(Config::DEFAULT);
         let pattern = Pattern::parse(
-            &self.filter_text,
+            &self.gallery.filter_text,
             CaseMatching::Ignore,
             Normalization::Smart,
         );
@@ -20,7 +20,8 @@ impl App {
         let mut buf = Vec::new();
 
         let mut scored_matches: Vec<(u32, ImageSlot)> = self
-            .all_images
+            .gallery
+            .all
             .iter()
             .filter_map(|slot| {
                 if let ImageSlot::MetadataLoaded(item) = slot {
@@ -38,8 +39,8 @@ impl App {
 
         scored_matches.sort_by(|a, b| b.0.cmp(&a.0));
 
-        self.images = scored_matches.into_iter().map(|(_, slot)| slot).collect();
+        self.gallery.filtered = scored_matches.into_iter().map(|(_, slot)| slot).collect();
 
-        self.current_index = 0;
+        self.gallery.current_index = 0;
     }
 }

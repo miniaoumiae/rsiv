@@ -4,8 +4,8 @@ use crate::image_item::ImageSlot;
 impl App {
     pub fn execute_handler(&mut self, handler_key: &str, on_marked: bool) {
         // Prevent stacking handlers
-        if self.is_handler_running {
-            self.input_mode = InputMode::Normal;
+        if self.input.is_handler_running {
+            self.input.mode = InputMode::Normal;
             return;
         }
 
@@ -14,20 +14,22 @@ impl App {
         let cmd_args = match config.handlers.get(handler_key) {
             Some(args) => args.clone(),
             None => {
-                self.input_mode = InputMode::Normal;
+                self.input.mode = InputMode::Normal;
                 return;
             }
         };
 
         let current_path_str =
-            if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+            if let ImageSlot::MetadataLoaded(item) =
+                &self.gallery.filtered[self.gallery.current_index]
+            {
                 item.path.to_string_lossy().into_owned()
             } else {
                 String::new()
             };
 
         let paths: Vec<String> = if on_marked {
-            self.marked_files.drain().collect()
+            self.gallery.marked_files.drain().collect()
         } else if current_path_str.is_empty() {
             vec![]
         } else {
@@ -35,19 +37,20 @@ impl App {
         };
 
         if paths.is_empty() || cmd_args.is_empty() {
-            self.input_mode = InputMode::Normal;
+            self.input.mode = InputMode::Normal;
             return;
         }
 
         let is_bulk = cmd_args.iter().any(|arg| arg.contains("%M"));
 
         // Set state
-        self.is_handler_running = true;
-        self.input_mode = InputMode::Normal;
-        self.handler_cancel_flag
+        self.input.is_handler_running = true;
+        self.input.mode = InputMode::Normal;
+        self.input
+            .handler_cancel_flag
             .store(false, std::sync::atomic::Ordering::Relaxed);
 
-        let cancel_flag = self.handler_cancel_flag.clone();
+        let cancel_flag = self.input.handler_cancel_flag.clone();
         let proxy = self.proxy.clone();
 
         std::thread::spawn(move || {
@@ -117,23 +120,23 @@ impl App {
     }
 
     pub fn handle_modal_input(&mut self, key: &str) {
-        match &self.input_mode {
+        match &self.input.mode {
             InputMode::WaitingForHandler => {
                 // Prevent even starting the prompt if running
-                if self.is_handler_running {
-                    self.input_mode = InputMode::Normal;
+                if self.input.is_handler_running {
+                    self.input.mode = InputMode::Normal;
                     return;
                 }
 
                 let config = crate::config::AppConfig::get();
                 if config.handlers.contains_key(key) {
-                    if self.marked_files.is_empty() {
+                    if self.gallery.marked_files.is_empty() {
                         self.execute_handler(key, false);
                     } else {
-                        self.input_mode = InputMode::AwaitingTarget(key.to_string());
+                        self.input.mode = InputMode::AwaitingTarget(key.to_string());
                     }
                 } else {
-                    self.input_mode = InputMode::Normal;
+                    self.input.mode = InputMode::Normal;
                 }
             }
             InputMode::AwaitingTarget(handler_key) => {
@@ -146,7 +149,7 @@ impl App {
                         self.execute_handler(&h_key, true);
                     }
                     _ => {
-                        self.input_mode = InputMode::Normal;
+                        self.input.mode = InputMode::Normal;
                     }
                 }
             }

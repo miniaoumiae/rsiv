@@ -102,7 +102,7 @@ fn main() {
     let _ = event_loop.run_app(&mut app);
 
     if cli.output_marked {
-        for path in &app.marked_files {
+        for path in &app.gallery.marked_files {
             println!("{}", path);
         }
     }
