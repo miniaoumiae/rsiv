@@ -1,7 +1,6 @@
 mod app;
 mod cache;
 mod config;
-mod filtering;
 mod frame_buffer;
 mod image_item;
 mod keybinds;

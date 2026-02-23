@@ -150,8 +150,11 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
                                             + (y / check_size))
                                             % 2
                                             == 0;
-                                        let (r, g, b) =
-                                            if is_dark { check_color_2 } else { check_color_1 };
+                                        let (r, g, b) = if is_dark {
+                                            check_color_2
+                                        } else {
+                                            check_color_1
+                                        };
                                         dest_pixel[0] = r;
                                         dest_pixel[1] = g;
                                         dest_pixel[2] = b;
@@ -191,17 +194,18 @@ pub fn draw_image(frame: &mut [u8], buf_w: i32, buf_h: i32, params: &DrawImagePa
                             if y >= start_y && y < end_y {
                                 let draw_slice_start = (start_x as usize) * 4;
                                 let draw_slice_end = (end_x as usize) * 4;
-                                let dest_slice =
-                                    &mut row_pixels[draw_slice_start..draw_slice_end];
+                                let dest_slice = &mut row_pixels[draw_slice_start..draw_slice_end];
 
                                 for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
                                     let current_screen_x = start_x + i as i32;
-                                    let is_dark = ((current_screen_x / check_size)
-                                        + (y / check_size))
-                                        % 2
-                                        == 0;
-                                    let (r, g, b) =
-                                        if is_dark { check_color_2 } else { check_color_1 };
+                                    let is_dark =
+                                        ((current_screen_x / check_size) + (y / check_size)) % 2
+                                            == 0;
+                                    let (r, g, b) = if is_dark {
+                                        check_color_2
+                                    } else {
+                                        check_color_1
+                                    };
                                     dest_pixel[0] = r;
                                     dest_pixel[1] = g;
                                     dest_pixel[2] = b;
@@ -497,10 +501,10 @@ pub fn draw_grid(
                         (p_w, p_h, *base_t_x, *base_t_y)
                     };
 
-                    let m_x = target_x + target_w + border_gap + border_thickness / 2
-                        - mark_size / 2;
-                    let m_y = target_y + target_h + border_gap + border_thickness / 2
-                        - mark_size / 2;
+                    let m_x =
+                        target_x + target_w + border_gap + border_thickness / 2 - mark_size / 2;
+                    let m_y =
+                        target_y + target_h + border_gap + border_thickness / 2 - mark_size / 2;
 
                     if y >= m_y && y < m_y + mark_size {
                         let start_draw_x = m_x.max(0);

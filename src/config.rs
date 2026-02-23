@@ -1,6 +1,6 @@
 use crate::view_mode::ViewMode;
-use serde::de::Deserializer;
 use serde::Deserialize;
+use serde::de::Deserializer;
 use std::env;
 use std::fs;
 use std::path::PathBuf;

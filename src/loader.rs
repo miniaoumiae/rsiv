@@ -1,6 +1,6 @@
 use crate::app::AppEvent;
 use crate::image_item::{FrameData, ImageFormat, ImageItem, LoadedAsset};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use exif::{In, Tag};
 use image::{AnimationDecoder, ImageReader};
 use memmap2::Mmap;
@@ -117,10 +117,7 @@ pub fn spawn_discovery_worker(
                     .unwrap_or(false)
             });
 
-            for entry in walker
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().is_file())
-            {
+            for entry in walker.filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
                 files.push(entry.path().to_path_buf());
             }
         }
@@ -366,7 +363,7 @@ fn apply_exif_orientation(img: image::DynamicImage, data: &[u8]) -> image::Dynam
     };
 
     // Apply Transformations
-    use image::imageops::{flip_horizontal, flip_vertical, rotate180, rotate270, rotate90};
+    use image::imageops::{flip_horizontal, flip_vertical, rotate90, rotate180, rotate270};
 
     match orientation {
         1 => img, // Normal
@@ -392,8 +389,7 @@ fn check_memory_before_decode(
     required_height: u32,
     frames: u32,
 ) -> Result<(), String> {
-    let required_bytes =
-        (required_width as u64) * (required_height as u64) * 4 * (frames as u64);
+    let required_bytes = (required_width as u64) * (required_height as u64) * 4 * (frames as u64);
 
     let mut sys = System::new();
     sys.refresh_memory();

@@ -19,14 +19,13 @@ impl App {
             }
         };
 
-        let current_path_str =
-            if let ImageSlot::MetadataLoaded(item) =
-                &self.gallery.filtered[self.gallery.current_index]
-            {
-                item.path.to_string_lossy().into_owned()
-            } else {
-                String::new()
-            };
+        let current_path_str = if let ImageSlot::MetadataLoaded(item) =
+            &self.gallery.filtered[self.gallery.current_index]
+        {
+            item.path.to_string_lossy().into_owned()
+        } else {
+            String::new()
+        };
 
         let paths: Vec<String> = if on_marked {
             self.gallery.marked_files.drain().collect()

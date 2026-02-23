@@ -52,8 +52,8 @@ impl ApplicationHandler<AppEvent> for App {
 
         let scale_factor = window.scale_factor();
         self.status_bar.set_scale(scale_factor as f32);
-        self.cursor.next_icon = crate::app::CursorState::build_cursor(event_loop, true);
-        self.cursor.prev_icon = crate::app::CursorState::build_cursor(event_loop, false);
+        self.cursor.next_icon = crate::app::build_cursor(event_loop, true);
+        self.cursor.prev_icon = crate::app::build_cursor(event_loop, false);
     }
 
     fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
@@ -72,7 +72,7 @@ impl ApplicationHandler<AppEvent> for App {
                         *slot = ImageSlot::MetadataLoaded(item);
                     }
                 } else {
-                    self.apply_filter();
+                    self.gallery.apply_filter();
                 }
 
                 if self.gallery.current_index == idx {
@@ -193,7 +193,7 @@ impl ApplicationHandler<AppEvent> for App {
                         .insert(insert_pos, ImageSlot::MetadataLoaded(new_item));
                 }
 
-                self.apply_filter();
+                self.gallery.apply_filter();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -223,7 +223,7 @@ impl ApplicationHandler<AppEvent> for App {
                     false
                 };
 
-                self.apply_filter();
+                self.gallery.apply_filter();
 
                 if self.gallery.current_index >= self.gallery.filtered.len() {
                     self.gallery.current_index = self.gallery.filtered.len().saturating_sub(1);
@@ -255,8 +255,12 @@ impl ApplicationHandler<AppEvent> for App {
                 self.cursor.pos = Some((position.x, position.y));
                 if let Some(w) = &self.window {
                     let width = w.inner_size().width as f64;
-                    self.cursor
-                        .refresh_icon(width, self.camera.grid_mode, &self.input.mode, Some(w));
+                    self.cursor.refresh_icon(
+                        width,
+                        self.camera.grid_mode,
+                        &self.input.mode,
+                        Some(w),
+                    );
                 } else {
                     self.cursor
                         .refresh_icon(0.0, self.camera.grid_mode, &self.input.mode, None);
@@ -313,8 +317,12 @@ impl ApplicationHandler<AppEvent> for App {
                 self.clamp_offsets();
                 if let Some(w) = &self.window {
                     let width = w.inner_size().width as f64;
-                    self.cursor
-                        .refresh_icon(width, self.camera.grid_mode, &self.input.mode, Some(w));
+                    self.cursor.refresh_icon(
+                        width,
+                        self.camera.grid_mode,
+                        &self.input.mode,
+                        Some(w),
+                    );
                 } else {
                     self.cursor
                         .refresh_icon(0.0, self.camera.grid_mode, &self.input.mode, None);
@@ -359,7 +367,7 @@ impl ApplicationHandler<AppEvent> for App {
                             InputMode::Filtering => {
                                 if !self.gallery.filter_text.is_empty() {
                                     self.gallery.filter_text.clear();
-                                    self.apply_filter();
+                                    self.gallery.apply_filter();
                                 }
                                 self.input.mode = InputMode::Normal;
                                 needs_redraw = true;
@@ -397,17 +405,17 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 Key::Named(NamedKey::Backspace) => {
                                     self.gallery.filter_text.pop();
-                                    self.apply_filter();
+                                    self.gallery.apply_filter();
                                     needs_redraw = true;
                                 }
                                 Key::Named(NamedKey::Space) => {
                                     self.gallery.filter_text.push(' ');
-                                    self.apply_filter();
+                                    self.gallery.apply_filter();
                                     needs_redraw = true;
                                 }
                                 Key::Character(ref c) => {
                                     self.gallery.filter_text.push_str(c);
-                                    self.apply_filter();
+                                    self.gallery.apply_filter();
                                     needs_redraw = true;
                                 }
                                 _ => {}
