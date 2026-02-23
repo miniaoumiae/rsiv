@@ -10,10 +10,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, CustomCursor, Window, WindowId};
 
 #[cfg(any(
     target_os = "linux",
@@ -55,6 +55,13 @@ pub enum InputMode {
     Filtering,
     WaitingForHandler,
     AwaitingTarget(String),
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum CursorZone {
+    None,
+    Prev,
+    Next,
 }
 
 pub struct App {
@@ -99,6 +106,11 @@ pub struct App {
     pub slideshow_on: bool,
     pub slideshow_delay: Duration,
     pub last_slide_time: Instant,
+
+    pub cursor_pos: Option<(f64, f64)>,
+    pub cursor_zone: CursorZone,
+    pub next_cursor: Option<CustomCursor>,
+    pub prev_cursor: Option<CustomCursor>,
 }
 
 impl App {
@@ -142,6 +154,10 @@ impl App {
             slideshow_on: false,
             slideshow_delay: Duration::from_secs(config.options.slideshow_default_delay),
             last_slide_time: Instant::now(),
+            cursor_pos: None,
+            cursor_zone: CursorZone::None,
+            next_cursor: None,
+            prev_cursor: None,
         }
     }
 
@@ -258,6 +274,210 @@ impl App {
         self.current_frame_index = 0;
         self.frame_timer = Duration::ZERO;
         self.is_playing = config.options.autoplay_animations;
+    }
+
+    fn is_in_next_zone(&self, x: f64) -> bool {
+        if self.grid_mode || self.input_mode != InputMode::Normal {
+            return false;
+        }
+        let Some(w) = &self.window else {
+            return false;
+        };
+        let width = w.inner_size().width as f64;
+        if width <= 0.0 {
+            return false;
+        }
+        x >= width * 0.8
+    }
+
+    fn is_in_prev_zone(&self, x: f64) -> bool {
+        if self.grid_mode || self.input_mode != InputMode::Normal {
+            return false;
+        }
+        let Some(w) = &self.window else {
+            return false;
+        };
+        let width = w.inner_size().width as f64;
+        if width <= 0.0 {
+            return false;
+        }
+        x <= width * 0.2
+    }
+
+    fn set_cursor_zone(&mut self, zone: CursorZone) {
+        if self.cursor_zone == zone {
+            return;
+        }
+        self.cursor_zone = zone;
+        if let Some(w) = &self.window {
+            match zone {
+                CursorZone::Next => {
+                    if let Some(cursor) = &self.next_cursor {
+                        w.set_cursor(cursor.clone());
+                    } else {
+                        w.set_cursor(CursorIcon::Default);
+                    }
+                }
+                CursorZone::Prev => {
+                    if let Some(cursor) = &self.prev_cursor {
+                        w.set_cursor(cursor.clone());
+                    } else {
+                        w.set_cursor(CursorIcon::Default);
+                    }
+                }
+                CursorZone::None => w.set_cursor(CursorIcon::Default),
+            };
+        }
+    }
+
+    fn refresh_cursor_icon(&mut self) {
+        if let Some((x, _)) = self.cursor_pos {
+            if self.is_in_next_zone(x) {
+                self.set_cursor_zone(CursorZone::Next);
+            } else if self.is_in_prev_zone(x) {
+                self.set_cursor_zone(CursorZone::Prev);
+            } else {
+                self.set_cursor_zone(CursorZone::None);
+            }
+        } else {
+            self.set_cursor_zone(CursorZone::None);
+        }
+    }
+
+    fn build_next_cursor(event_loop: &ActiveEventLoop) -> Option<CustomCursor> {
+        const W: u16 = 48;
+        const H: u16 = 48;
+        const TIP_X: i32 = 42;
+        const MID_Y: i32 = 24;
+        const HOT_X: u16 = TIP_X as u16;
+        const HOT_Y: u16 = MID_Y as u16;
+        let head_len = 18;
+        let head_base_x = TIP_X - head_len;
+        let head_half_height = 14;
+        let tail_left = 8;
+        let tail_half_height = 6;
+
+        let w = W as i32;
+        let h = H as i32;
+        let mut fill = vec![false; (w * h) as usize];
+
+        for y in 0..h {
+            let dy = (y - MID_Y).abs();
+            if dy <= head_half_height {
+                let x_max = TIP_X - (dy * head_len / head_half_height);
+                for x in head_base_x..=x_max {
+                    if x >= 0 && x < w {
+                        fill[(y * w + x) as usize] = true;
+                    }
+                }
+            }
+            if dy <= tail_half_height {
+                for x in tail_left..head_base_x {
+                    if x >= 0 && x < w {
+                        fill[(y * w + x) as usize] = true;
+                    }
+                }
+            }
+        }
+
+        let mut rgba = Vec::with_capacity((W as usize) * (H as usize) * 4);
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                if fill[idx] {
+                    rgba.extend_from_slice(&[0, 0, 0, 0]);
+                } else {
+                    let mut is_border = false;
+                    for ny in (y - 1)..=(y + 1) {
+                        for nx in (x - 1)..=(x + 1) {
+                            if nx < 0 || ny < 0 || nx >= w || ny >= h {
+                                continue;
+                            }
+                            let nidx = (ny * w + nx) as usize;
+                            if fill[nidx] {
+                                is_border = true;
+                            }
+                        }
+                    }
+                    if is_border {
+                        rgba.extend_from_slice(&[255, 255, 255, 255]);
+                    } else {
+                        rgba.extend_from_slice(&[0, 0, 0, 0]);
+                    }
+                }
+            }
+        }
+
+        let source = CustomCursor::from_rgba(rgba, W, H, HOT_X, HOT_Y).ok()?;
+        Some(event_loop.create_custom_cursor(source))
+    }
+
+    fn build_prev_cursor(event_loop: &ActiveEventLoop) -> Option<CustomCursor> {
+        const W: u16 = 48;
+        const H: u16 = 48;
+        const TIP_X: i32 = 6;
+        const MID_Y: i32 = 24;
+        const HOT_X: u16 = TIP_X as u16;
+        const HOT_Y: u16 = MID_Y as u16;
+        let head_len = 18;
+        let head_base_x = TIP_X + head_len;
+        let head_half_height = 14;
+        let tail_right = 40;
+        let tail_half_height = 6;
+
+        let w = W as i32;
+        let h = H as i32;
+        let mut fill = vec![false; (w * h) as usize];
+
+        for y in 0..h {
+            let dy = (y - MID_Y).abs();
+            if dy <= head_half_height {
+                let x_min = TIP_X + (dy * head_len / head_half_height);
+                for x in x_min..=head_base_x {
+                    if x >= 0 && x < w {
+                        fill[(y * w + x) as usize] = true;
+                    }
+                }
+            }
+            if dy <= tail_half_height {
+                for x in (head_base_x + 1)..=tail_right {
+                    if x >= 0 && x < w {
+                        fill[(y * w + x) as usize] = true;
+                    }
+                }
+            }
+        }
+
+        let mut rgba = Vec::with_capacity((W as usize) * (H as usize) * 4);
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) as usize;
+                if fill[idx] {
+                    rgba.extend_from_slice(&[0, 0, 0, 0]);
+                } else {
+                    let mut is_border = false;
+                    for ny in (y - 1)..=(y + 1) {
+                        for nx in (x - 1)..=(x + 1) {
+                            if nx < 0 || ny < 0 || nx >= w || ny >= h {
+                                continue;
+                            }
+                            let nidx = (ny * w + nx) as usize;
+                            if fill[nidx] {
+                                is_border = true;
+                            }
+                        }
+                    }
+                    if is_border {
+                        rgba.extend_from_slice(&[255, 255, 255, 255]);
+                    } else {
+                        rgba.extend_from_slice(&[0, 0, 0, 0]);
+                    }
+                }
+            }
+        }
+
+        let source = CustomCursor::from_rgba(rgba, W, H, HOT_X, HOT_Y).ok()?;
+        Some(event_loop.create_custom_cursor(source))
     }
 
     fn mutate_current_image<F>(&mut self, f: F) -> bool
@@ -842,6 +1062,7 @@ impl App {
                 if !self.grid_mode {
                     self.reset_view_for_new_image();
                 }
+                self.refresh_cursor_icon();
                 needs_redraw = true;
             }
             Action::ToggleAnimation => {
@@ -1178,6 +1399,8 @@ impl ApplicationHandler<AppEvent> for App {
 
         let scale_factor = window.scale_factor();
         self.status_bar.set_scale(scale_factor as f32);
+        self.next_cursor = Self::build_next_cursor(event_loop);
+        self.prev_cursor = Self::build_prev_cursor(event_loop);
     }
 
     fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
@@ -1330,15 +1553,16 @@ impl ApplicationHandler<AppEvent> for App {
                 });
 
                 // If the deleted image was the current one, standard logic applies
-                let was_current = if !self.images.is_empty() && self.current_index < self.images.len() {
-                    if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
-                        item.path == path
+                let was_current =
+                    if !self.images.is_empty() && self.current_index < self.images.len() {
+                        if let ImageSlot::MetadataLoaded(item) = &self.images[self.current_index] {
+                            item.path == path
+                        } else {
+                            false
+                        }
                     } else {
                         false
-                    }
-                } else {
-                    false
-                };
+                    };
 
                 self.apply_filter();
 
@@ -1368,6 +1592,41 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers.state();
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_pos = Some((position.x, position.y));
+                if self.is_in_next_zone(position.x) {
+                    self.set_cursor_zone(CursorZone::Next);
+                } else if self.is_in_prev_zone(position.x) {
+                    self.set_cursor_zone(CursorZone::Prev);
+                } else {
+                    self.set_cursor_zone(CursorZone::None);
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.cursor_pos = None;
+                self.set_cursor_zone(CursorZone::None);
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if state.is_pressed() && button == MouseButton::Left {
+                    if let Some((x, _)) = self.cursor_pos {
+                        if self.is_in_next_zone(x) {
+                            let needs_redraw = self.handle_navigation_action(Action::NextImage, 1);
+                            if needs_redraw {
+                                if let Some(w) = &self.window {
+                                    w.request_redraw();
+                                }
+                            }
+                        } else if self.is_in_prev_zone(x) {
+                            let needs_redraw = self.handle_navigation_action(Action::PrevImage, 1);
+                            if needs_redraw {
+                                if let Some(w) = &self.window {
+                                    w.request_redraw();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             WindowEvent::RedrawRequested => self.render(),
             WindowEvent::Resized(new_size) => {
                 if let Some(pixels) = &mut self.pixels {
@@ -1377,6 +1636,7 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
                 self.clamp_offsets();
+                self.refresh_cursor_icon();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
