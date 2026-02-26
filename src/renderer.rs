@@ -81,6 +81,38 @@ struct GridContext<'a> {
     mark_size: i32,
 }
 
+#[inline(always)]
+fn blend_swar(src: [u8; 4], dst: [u8; 4], alpha: u32) -> [u8; 4] {
+    let inv_a = 255 - alpha;
+
+    // Pack RB (0x00RR00BB)
+    let src_rb = (src[0] as u32) << 16 | (src[2] as u32);
+    let dst_rb = (dst[0] as u32) << 16 | (dst[2] as u32);
+
+    // Pack GA (0x00GG00AA)
+    let src_ga = (src[1] as u32) << 16 | (src[3] as u32);
+    let dst_ga = (dst[1] as u32) << 16 | (dst[3] as u32);
+
+    // Blend RB
+    let res_rb = src_rb * alpha + dst_rb * inv_a;
+    let out_rb = res_rb + 0x00800080; // Rounding bias
+    let out_rb = (out_rb + ((out_rb >> 8) & 0x00FF00FF)) >> 8;
+    let out_rb = out_rb & 0x00FF00FF;
+
+    // Blend GA
+    let res_ga = src_ga * alpha + dst_ga * inv_a;
+    let out_ga = res_ga + 0x00800080;
+    let out_ga = (out_ga + ((out_ga >> 8) & 0x00FF00FF)) >> 8;
+    let out_ga = out_ga & 0x00FF00FF;
+
+    [
+        (out_rb >> 16) as u8,
+        (out_ga >> 16) as u8,
+        out_rb as u8,
+        255, // Resulting alpha
+    ]
+}
+
 pub fn clear(frame: &mut [u8], color: Rgb) {
     let pixel = [color.r, color.g, color.b, 255];
     frame.par_chunks_mut(1024).for_each(|chunk| {
@@ -91,77 +123,16 @@ pub fn clear(frame: &mut [u8], color: Rgb) {
 }
 
 #[inline(always)]
-fn get_checkerboard_bg(x: i32, y: i32, check_size: i32, color_1: Rgb, color_2: Rgb) -> Rgb {
-    let is_dark = ((x / check_size) + (y / check_size)) % 2 == 0;
-    if is_dark { color_2 } else { color_1 }
-}
-
-#[inline(always)]
-fn branchless_blend(
-    src_r: u32,
-    src_g: u32,
-    src_b: u32,
-    src_a: u32,
-    bg_r: u32,
-    bg_g: u32,
-    bg_b: u32,
-) -> (u8, u8, u8) {
-    let inv_a = 255 - src_a;
-    let r = (src_r * src_a + bg_r * inv_a) / 255;
-    let g = (src_g * src_a + bg_g * inv_a) / 255;
-    let b = (src_b * src_a + bg_b * inv_a) / 255;
-    (r as u8, g as u8, b as u8)
-}
-
-#[inline(always)]
-fn blend_pixel_with_bg(
-    dest_pixel: &mut [u8],
-    src_r: u32,
-    src_g: u32,
-    src_b: u32,
-    src_a: u32,
-    screen_x: i32,
-    y: i32,
-    show_alpha: bool,
+fn get_checkerboard_bg_fast(
+    x: i32,
+    y_check_state: i32,
     check_size: i32,
-    check_color_1: Rgb,
-    check_color_2: Rgb,
-) {
-    if src_a == 255 {
-        dest_pixel[0] = src_r as u8;
-        dest_pixel[1] = src_g as u8;
-        dest_pixel[2] = src_b as u8;
-        dest_pixel[3] = 255;
-    } else if src_a > 0 {
-        let bg = if show_alpha {
-            get_checkerboard_bg(screen_x, y, check_size, check_color_1, check_color_2)
-        } else {
-            Rgb {
-                r: dest_pixel[0],
-                g: dest_pixel[1],
-                b: dest_pixel[2],
-            }
-        };
-        let (r, g, b) = branchless_blend(
-            src_r,
-            src_g,
-            src_b,
-            src_a,
-            bg.r as u32,
-            bg.g as u32,
-            bg.b as u32,
-        );
-        dest_pixel[0] = r;
-        dest_pixel[1] = g;
-        dest_pixel[2] = b;
-        dest_pixel[3] = 255;
-    } else if show_alpha {
-        let bg = get_checkerboard_bg(screen_x, y, check_size, check_color_1, check_color_2);
-        dest_pixel[0] = bg.r;
-        dest_pixel[1] = bg.g;
-        dest_pixel[2] = bg.b;
-        dest_pixel[3] = 255;
-    }
+    color_1: Rgb,
+    color_2: Rgb,
+) -> Rgb {
+    let x_state = x / check_size;
+    let is_dark = (x_state ^ y_check_state) & 1;
+    if is_dark != 0 { color_2 } else { color_1 }
 }
 
 // Optimized bilinear sampling using pre-calculated weights and row pointers
@@ -245,8 +216,9 @@ fn render_raster_scanline(
     let row0 = &current_pixels[y0 * src_width as usize * 4..];
     let row1 = &current_pixels[y1 * src_width as usize * 4..];
 
-    let global_src_x_start_f = (start_x as f64 - tl_x) * inv_scale;
-    let mut src_x_f = global_src_x_start_f;
+    let mut src_x_f = (start_x as f64 - tl_x) * inv_scale;
+
+    let y_check_state = y / check_size;
 
     let draw_slice_start = (start_x as usize) * 4;
     let draw_slice_end = (end_x as usize) * 4;
@@ -259,24 +231,32 @@ fn render_raster_scanline(
     assert!(dest_slice.len() % 4 == 0);
 
     for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
-        let current_screen_x = start_x + i as i32;
+        let x = start_x + i as i32;
 
         if src_x_f >= 0.0 && src_x_f < src_width as f64 {
             let (r, g, b, a) = sample_bilinear_fast(row0, row1, src_width, src_x_f, fy, inv_fy);
 
-            blend_pixel_with_bg(
-                dest_pixel,
-                r,
-                g,
-                b,
-                a,
-                current_screen_x,
-                y,
-                show_alpha,
-                check_size,
-                check_color_1,
-                check_color_2,
-            );
+            let bg = if show_alpha {
+                get_checkerboard_bg_fast(x, y_check_state, check_size, check_color_1, check_color_2)
+            } else {
+                Rgb {
+                    r: dest_pixel[0],
+                    g: dest_pixel[1],
+                    b: dest_pixel[2],
+                }
+            };
+
+            let src_px = [r as u8, g as u8, b as u8, a as u8];
+            let bg_px = [bg.r, bg.g, bg.b, 255];
+
+            if a == 255 {
+                dest_pixel.copy_from_slice(&src_px);
+            } else if a > 0 {
+                let blended = blend_swar(src_px, bg_px, a);
+                dest_pixel.copy_from_slice(&blended);
+            } else {
+                dest_pixel.copy_from_slice(&bg_px);
+            }
         }
         src_x_f += inv_scale;
     }
@@ -360,15 +340,12 @@ fn render_checkerboard_bg_scanline(
     let dest_slice = &mut row_pixels[draw_slice_start..draw_slice_end];
     assert!(dest_slice.len() % 4 == 0);
 
+    let y_check_state = y / check_size;
+
     for (i, dest_pixel) in dest_slice.chunks_exact_mut(4).enumerate() {
-        let current_screen_x = start_x + i as i32;
-        let bg = get_checkerboard_bg(
-            current_screen_x,
-            y,
-            check_size,
-            check_color_1,
-            check_color_2,
-        );
+        let x = start_x + i as i32;
+        let bg =
+            get_checkerboard_bg_fast(x, y_check_state, check_size, check_color_1, check_color_2);
         dest_pixel[0] = bg.r;
         dest_pixel[1] = bg.g;
         dest_pixel[2] = bg.b;
@@ -723,19 +700,10 @@ fn draw_thumbnail_scanline(row_pixels: &mut [u8], y: i32, buf_w: i32, rect: Rect
         if src_a == 255 {
             dest_chunk.copy_from_slice(src_chunk);
         } else if src_a > 0 {
-            let (r, g, b) = branchless_blend(
-                src_chunk[0] as u32,
-                src_chunk[1] as u32,
-                src_chunk[2] as u32,
-                src_a,
-                dest_chunk[0] as u32,
-                dest_chunk[1] as u32,
-                dest_chunk[2] as u32,
-            );
-            dest_chunk[0] = r;
-            dest_chunk[1] = g;
-            dest_chunk[2] = b;
-            dest_chunk[3] = 255;
+            let src_px = [src_chunk[0], src_chunk[1], src_chunk[2], src_chunk[3]];
+            let bg_px = [dest_chunk[0], dest_chunk[1], dest_chunk[2], 255];
+            let blended = blend_swar(src_px, bg_px, src_a);
+            dest_chunk.copy_from_slice(&blended);
         }
     }
 }
