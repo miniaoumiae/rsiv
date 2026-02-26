@@ -160,7 +160,7 @@ impl App {
         let frame_slice = pixels.frame_mut();
         let config = crate::config::AppConfig::get();
         let bg_color = crate::utils::parse_color(&config.ui.bg_color);
-        crate::renderer::clear(frame_slice, bg_color);
+        crate::renderer::clear(frame_slice, bg_color.into());
 
         let (buf_w, buf_h) = if let Some(w) = &self.window {
             let s = w.inner_size();
@@ -179,11 +179,11 @@ impl App {
         if !self.gallery.filtered.is_empty() {
             if self.camera.grid_mode {
                 let colors = crate::renderer::GridColors {
-                    bg: bg_color,
-                    accent: crate::utils::parse_color(&config.ui.thumbnail_border_color),
-                    mark: crate::utils::parse_color(&config.ui.mark_color),
-                    loading: crate::utils::parse_color(&config.ui.loading_color),
-                    error: crate::utils::parse_color(&config.ui.error_color),
+                    bg: bg_color.into(),
+                    accent: crate::utils::parse_color(&config.ui.thumbnail_border_color).into(),
+                    mark: crate::utils::parse_color(&config.ui.mark_color).into(),
+                    loading: crate::utils::parse_color(&config.ui.loading_color).into(),
+                    error: crate::utils::parse_color(&config.ui.error_color).into(),
                 };
 
                 crate::renderer::draw_grid(
