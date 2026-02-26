@@ -391,92 +391,52 @@ impl ApplicationHandler<AppEvent> for App {
                         InputMode::WaitingForHandler | InputMode::AwaitingTarget(_) => {
                             if let Key::Character(c) = &event.logical_key {
                                 self.handle_modal_input(c.as_str());
-                                if let Some(w) = &self.window {
-                                    w.request_redraw();
-                                }
-                                return;
+                                needs_redraw = true;
                             }
                         }
-                        InputMode::Filtering => {
-                            match event.logical_key {
-                                Key::Named(NamedKey::Enter) => {
-                                    self.input.mode = InputMode::Normal;
-                                    needs_redraw = true;
-                                }
-                                Key::Named(NamedKey::Backspace) => {
-                                    self.gallery.filter_text.pop();
-                                    self.gallery.apply_filter();
-                                    needs_redraw = true;
-                                }
-                                Key::Named(NamedKey::Space) => {
-                                    self.gallery.filter_text.push(' ');
-                                    self.gallery.apply_filter();
-                                    needs_redraw = true;
-                                }
-                                Key::Character(ref c) => {
-                                    self.gallery.filter_text.push_str(c);
-                                    self.gallery.apply_filter();
-                                    needs_redraw = true;
-                                }
-                                _ => {}
+                        InputMode::Filtering => match event.logical_key {
+                            Key::Named(NamedKey::Enter) => {
+                                self.input.mode = InputMode::Normal;
+                                needs_redraw = true;
                             }
-                            if needs_redraw {
-                                if let Some(w) = &self.window {
-                                    w.request_redraw();
-                                }
+                            Key::Named(NamedKey::Backspace) => {
+                                self.gallery.filter_text.pop();
+                                self.gallery.apply_filter();
+                                needs_redraw = true;
                             }
-                            return;
-                        }
+                            Key::Named(NamedKey::Space) => {
+                                self.gallery.filter_text.push(' ');
+                                self.gallery.apply_filter();
+                                needs_redraw = true;
+                            }
+                            Key::Character(ref c) => {
+                                self.gallery.filter_text.push_str(c);
+                                self.gallery.apply_filter();
+                                needs_redraw = true;
+                            }
+                            _ => {}
+                        },
                         InputMode::Normal => {}
                     }
 
-                    let old_scale = self.get_current_scale();
-                    if let Some(action) = crate::keybinds::Binding::resolve(
+                    if !matches!(self.input.mode, InputMode::Normal) {
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                        return;
+                    }
+
+                    let action_opt = crate::keybinds::Binding::resolve(
                         &event,
                         &self.input.bindings,
                         self.input.modifiers,
                         self.camera.grid_mode,
-                    ) {
-                        match action {
-                            Action::Quit => _el.exit(),
-                            Action::FilterMode => {
-                                self.input.mode = InputMode::Filtering;
-                                needs_redraw = true;
-                            }
-                            Action::ScriptHandlerPrefix => {
-                                self.input.mode = InputMode::WaitingForHandler;
-                                needs_redraw = true;
-                            }
-                            Action::Digit(d) => {
-                                if d == 0 && self.input.prefix_count.is_none() {
-                                    self.handle_navigation_action(Action::FirstImage, 1);
-                                    needs_redraw = true;
-                                } else {
-                                    let current = self.input.prefix_count.unwrap_or(0);
-                                    let new_count = current.saturating_mul(10).saturating_add(d);
-                                    self.input.prefix_count = Some(new_count);
-                                    needs_redraw = true;
-                                }
-                            }
-                            other_action => {
-                                let raw_prefix = self.input.prefix_count;
-                                let count = self.pop_count();
+                    );
 
-                                if self.handle_navigation_action(other_action, count)
-                                    || self.handle_grid_movement_action(other_action, count)
-                                    || self.handle_image_ops_action(other_action, count)
-                                    || self.handle_view_action(other_action, old_scale)
-                                    || self.handle_toggle_action(other_action, raw_prefix)
-                                {
-                                    needs_redraw = true;
-                                }
-                                if matches!(other_action, Action::RemoveImage)
-                                    && self.gallery.all.is_empty()
-                                {
-                                    _el.exit();
-                                }
-                            }
-                        }
+                    if let Some(action) = action_opt {
+                        needs_redraw |= self.dispatch_action(action, _el);
                     }
 
                     if needs_redraw {

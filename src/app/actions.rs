@@ -1,14 +1,62 @@
-use crate::app::App;
+use crate::app::{App, InputMode};
 use crate::image_item::ImageSlot;
 use crate::keybinds::Action;
 use crate::view_mode::ViewMode;
 use std::time::{Duration, Instant};
+use winit::event_loop::ActiveEventLoop;
 
 impl App {
     pub fn reset_view_for_new_image(&mut self) {
         self.camera.off_x = 0;
         self.camera.off_y = 0;
         self.playback.reset();
+    }
+
+    // Returns true if a redraw is needed.
+    pub fn dispatch_action(&mut self, action: Action, el: &ActiveEventLoop) -> bool {
+        let old_scale = self.get_current_scale();
+
+        match action {
+            Action::Quit => {
+                el.exit();
+                false
+            }
+            Action::FilterMode => {
+                self.input.mode = InputMode::Filtering;
+                true
+            }
+            Action::ScriptHandlerPrefix => {
+                self.input.mode = InputMode::WaitingForHandler;
+                true
+            }
+            Action::Digit(d) => {
+                if d == 0 && self.input.prefix_count.is_none() {
+                    self.handle_navigation_action(Action::FirstImage, 1)
+                } else {
+                    let current = self.input.prefix_count.unwrap_or(0);
+                    self.input
+                        .prefix_count
+                        .replace(current.saturating_mul(10).saturating_add(d));
+                    true
+                }
+            }
+            other_action => {
+                let raw_prefix = self.input.prefix_count;
+                let count = self.pop_count();
+
+                let redraw = self.handle_navigation_action(other_action, count)
+                    || self.handle_grid_movement_action(other_action, count)
+                    || self.handle_image_ops_action(other_action, count)
+                    || self.handle_view_action(other_action, old_scale)
+                    || self.handle_toggle_action(other_action, raw_prefix);
+
+                if matches!(other_action, Action::RemoveImage) && self.gallery.all.is_empty() {
+                    el.exit();
+                }
+
+                redraw
+            }
+        }
     }
 
     pub fn handle_navigation_action(&mut self, action: Action, count: usize) -> bool {
