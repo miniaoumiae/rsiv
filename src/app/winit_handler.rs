@@ -387,39 +387,45 @@ impl ApplicationHandler<AppEvent> for App {
                         return;
                     }
 
+                    let mut is_modal_input = false;
+
                     match self.input.mode {
                         InputMode::WaitingForHandler | InputMode::AwaitingTarget(_) => {
+                            is_modal_input = true;
                             if let Key::Character(c) = &event.logical_key {
                                 self.handle_modal_input(c.as_str());
                                 needs_redraw = true;
                             }
                         }
-                        InputMode::Filtering => match event.logical_key {
-                            Key::Named(NamedKey::Enter) => {
-                                self.input.mode = InputMode::Normal;
-                                needs_redraw = true;
+                        InputMode::Filtering => {
+                            is_modal_input = true;
+                            match event.logical_key {
+                                Key::Named(NamedKey::Enter) => {
+                                    self.input.mode = InputMode::Normal;
+                                    needs_redraw = true;
+                                }
+                                Key::Named(NamedKey::Backspace) => {
+                                    self.gallery.filter_text.pop();
+                                    self.gallery.apply_filter();
+                                    needs_redraw = true;
+                                }
+                                Key::Named(NamedKey::Space) => {
+                                    self.gallery.filter_text.push(' ');
+                                    self.gallery.apply_filter();
+                                    needs_redraw = true;
+                                }
+                                Key::Character(ref c) => {
+                                    self.gallery.filter_text.push_str(c);
+                                    self.gallery.apply_filter();
+                                    needs_redraw = true;
+                                }
+                                _ => {}
                             }
-                            Key::Named(NamedKey::Backspace) => {
-                                self.gallery.filter_text.pop();
-                                self.gallery.apply_filter();
-                                needs_redraw = true;
-                            }
-                            Key::Named(NamedKey::Space) => {
-                                self.gallery.filter_text.push(' ');
-                                self.gallery.apply_filter();
-                                needs_redraw = true;
-                            }
-                            Key::Character(ref c) => {
-                                self.gallery.filter_text.push_str(c);
-                                self.gallery.apply_filter();
-                                needs_redraw = true;
-                            }
-                            _ => {}
-                        },
+                        }
                         InputMode::Normal => {}
                     }
 
-                    if !matches!(self.input.mode, InputMode::Normal) {
+                    if is_modal_input {
                         if needs_redraw {
                             if let Some(w) = &self.window {
                                 w.request_redraw();
