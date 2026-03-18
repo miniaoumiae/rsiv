@@ -18,6 +18,10 @@ impl App {
 
         match action {
             Action::Quit => {
+                let pid = std::process::id();
+                let pid_socket = crate::ipc::get_pid_socket(pid);
+                let _ = std::fs::remove_file(pid_socket);
+
                 el.exit();
                 false
             }

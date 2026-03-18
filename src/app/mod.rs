@@ -37,6 +37,10 @@ pub enum AppEvent {
     FileChanged(ImageItem),
     FileDeleted(PathBuf),
     HandlerFinished,
+    Ipc(
+        crate::ipc::IpcRequest,
+        std::sync::mpsc::Sender<crate::ipc::IpcResponse>,
+    ),
 }
 
 #[derive(Debug, PartialEq, Clone)]

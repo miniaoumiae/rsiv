@@ -242,6 +242,82 @@ impl ApplicationHandler<AppEvent> for App {
                     w.request_redraw();
                 }
             }
+            AppEvent::Ipc(req, tx) => {
+                match req {
+                    crate::ipc::IpcRequest::RunAction(action) => {
+                        let needs_redraw = self.dispatch_action(action, _el);
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                        let _ = tx.send(crate::ipc::IpcResponse::Ack);
+                    }
+                    crate::ipc::IpcRequest::AddFile(path) => {
+                        let already_exists = self.gallery.all.iter().any(|slot| {
+                            if let ImageSlot::MetadataLoaded(item) = slot {
+                                item.path == path
+                            } else {
+                                false
+                            }
+                        });
+
+                        if !already_exists {
+                            // Add placeholder
+                            self.gallery.all.push(ImageSlot::PendingMetadata);
+                            self.gallery.apply_filter();
+
+                            // Jump to the newly added image
+                            self.gallery.current_index =
+                                self.gallery.filtered.len().saturating_sub(1);
+                            self.reset_view_for_new_image();
+
+                            let p = self.proxy.clone();
+                            let idx = self.gallery.all.len() - 1;
+
+                            // Probe file in background to prevent freezing the UI
+                            std::thread::spawn(move || {
+                                if let Ok(format) = crate::loader::identify_format(&path) {
+                                    if let Ok((width, height)) =
+                                        crate::loader::probe_image(&path, format)
+                                    {
+                                        let item = crate::image_item::ImageItem {
+                                            path: path.clone(),
+                                            width,
+                                            height,
+                                            format,
+                                        };
+                                        let _ = p.send_event(AppEvent::MetadataLoaded(idx, item));
+                                        return;
+                                    }
+                                }
+                                let _ = p.send_event(AppEvent::MetadataError(
+                                    idx,
+                                    path.clone(),
+                                    "Invalid image".into(),
+                                ));
+                            });
+
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                        let _ = tx.send(crate::ipc::IpcResponse::Ack);
+                    }
+                    crate::ipc::IpcRequest::GetState => {
+                        let state = if self.gallery.filtered.is_empty() {
+                            "No images".to_string()
+                        } else if let ImageSlot::MetadataLoaded(item) =
+                            &self.gallery.filtered[self.gallery.current_index]
+                        {
+                            item.path.to_string_lossy().into_owned()
+                        } else {
+                            "Loading...".to_string()
+                        };
+                        let _ = tx.send(crate::ipc::IpcResponse::State(state));
+                    }
+                }
+            }
         }
     }
 

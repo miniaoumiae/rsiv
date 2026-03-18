@@ -462,7 +462,7 @@ Modifiers are specified by adding them before the key, separated by `+`.
 
 > Pan view down (or move cursor down in Grid).
 >
-> **Default:** `["j", "Dowo"]`
+> **Default:** `["j", "Down"]`
 
 **view_pan_up** = `string` | `[string]`
 

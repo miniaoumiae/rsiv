@@ -2590,6 +2590,7 @@ dependencies = [
  "rayon",
  "resvg",
  "serde",
+ "serde_json",
  "sysinfo",
  "tiny-skia",
  "toml",
