@@ -13,7 +13,6 @@ mod utils;
 mod view_mode;
 mod watcher;
 
-use crate::ipc;
 use app::{App, AppEvent};
 use clap::{Parser, Subcommand};
 use std::io::{self, BufRead, IsTerminal};
