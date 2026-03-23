@@ -76,6 +76,7 @@ rsiv -o ~/Pictures | xargs -I {} cp {} ~/Selected/
 | `-d`, `--max-depth <N>` | Maximum recursion depth (requires `-r`).           |
 | `-t`, `--thumbnail`     | Start the application in Thumbnail (Grid) mode.    |
 | `-o`, `--output-marked` | Print paths of marked files to `stdout` upon exit. |
+| `--no-watch`            | Disable filesystem watcher.                        |
 
 ## Configuration
 

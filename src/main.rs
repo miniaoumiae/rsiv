@@ -48,6 +48,10 @@ struct Cli {
     #[arg(short = 'd', long, requires = "recursive")]
     max_depth: Option<usize>,
 
+    /// Disable filesystem watcher
+    #[arg(long)]
+    no_watch: bool,
+
     /// Image paths or directories
     #[arg(required = false)]
     paths: Vec<String>,
@@ -140,7 +144,9 @@ fn main() {
         cli.hidden,
         proxy.clone(),
     );
-    watcher::spawn_watcher(canonical_paths, cli.recursive, proxy.clone());
+    if !cli.no_watch {
+        watcher::spawn_watcher(canonical_paths, cli.recursive, proxy.clone());
+    }
 
     let _ = event_loop.run_app(&mut app);
 
