@@ -13,6 +13,7 @@ mod utils;
 mod view_mode;
 mod watcher;
 
+use crate::ipc;
 use app::{App, AppEvent};
 use clap::{Parser, Subcommand};
 use std::io::{self, BufRead, IsTerminal};
@@ -51,6 +52,10 @@ struct Cli {
     /// Disable filesystem watcher
     #[arg(long)]
     no_watch: bool,
+
+    /// Disable IPC server
+    #[arg(long)]
+    no_ipc: bool,
 
     /// Image paths or directories
     #[arg(required = false)]
@@ -91,7 +96,7 @@ fn main() {
         all,
     }) = &cli.command
     {
-        match crate::ipc::send_message(msg_type, payload.as_deref().unwrap_or(""), *target, *all) {
+        match ipc::send_message(msg_type, payload.as_deref().unwrap_or(""), *target, *all) {
             Ok(_) => std::process::exit(0),
             Err(e) => {
                 crate::rsiv_err!("{}", e);
@@ -133,7 +138,9 @@ fn main() {
     let event_loop = EventLoop::<AppEvent>::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();
 
-    crate::ipc::spawn_ipc_server(proxy.clone());
+    if !cli.no_ipc {
+        ipc::spawn_ipc_server(proxy.clone());
+    }
 
     let mut app = App::new(vec![], cli.thumbnail, proxy.clone());
 
@@ -150,7 +157,9 @@ fn main() {
 
     let _ = event_loop.run_app(&mut app);
 
-    crate::ipc::cleanup_sockets();
+    if !cli.no_ipc {
+        ipc::cleanup_sockets();
+    }
 
     if cli.output_marked {
         for path in &app.gallery.marked_files {

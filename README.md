@@ -70,13 +70,14 @@ rsiv -o ~/Pictures | xargs -I {} cp {} ~/Selected/
 
 | Flag                    | Description                                        |
 | ----------------------- | -------------------------------------------------- |
-| `-q`, `--quiet`         | Quiet mode: Suppress warnings and non-fatal errors |
+| `-q`, `--quiet`         | Suppress warnings and non-fatal errors             |
 | `-r`, `--recursive`     | Recursively search directories for images.         |
 | `-H`, `--hidden`        | Include hidden files and directories.              |
 | `-d`, `--max-depth <N>` | Maximum recursion depth (requires `-r`).           |
 | `-t`, `--thumbnail`     | Start the application in Thumbnail (Grid) mode.    |
 | `-o`, `--output-marked` | Print paths of marked files to `stdout` upon exit. |
 | `--no-watch`            | Disable filesystem watcher.                        |
+| `--no-ipc`              | Disable IPC server.                                |
 
 ## Configuration
 
