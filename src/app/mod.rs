@@ -11,7 +11,7 @@ pub use gallery::Gallery;
 
 use crate::cache::CacheManager;
 use crate::image_item::{ImageItem, ImageSlot};
-use crate::loader::Loader;
+use crate::loader::{Loader, LoaderError};
 use crate::status_bar::StatusBar;
 use pixels::Pixels;
 use std::collections::HashSet;
@@ -28,11 +28,11 @@ use std::sync::atomic::AtomicBool;
 pub enum AppEvent {
     InitialCount(usize),
     MetadataLoaded(usize, ImageItem),
-    MetadataError(usize, PathBuf, String),
+    MetadataError(usize, PathBuf, LoaderError),
     DiscoveryComplete,
     ImagePixelsLoaded(PathBuf, Arc<crate::image_item::LoadedAsset>),
     ThumbnailLoaded(PathBuf, Arc<(u32, u32, Vec<u8>)>),
-    LoadError(PathBuf, String),
+    LoadError(PathBuf, LoaderError),
     LoadCancelled(PathBuf),
     FileChanged(ImageItem),
     FileDeleted(PathBuf),

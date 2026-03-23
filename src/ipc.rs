@@ -1,6 +1,8 @@
 use crate::app::AppEvent;
 use crate::keybinds::Action;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::fs::symlink;
@@ -23,6 +25,60 @@ pub enum IpcResponse {
     Error(String),
 }
 
+#[derive(Debug)]
+pub enum IpcError {
+    Io(std::io::Error),
+    Serialize(serde_json::Error),
+    Deserialize(serde_json::Error),
+    InvalidMessageType,
+    InvalidAction(String),
+    InvalidPath(String),
+    ResponseTooLarge,
+    NoTargets,
+    ServerError(String),
+    ConnectFailed(PathBuf),
+    NoSuccess,
+}
+
+impl fmt::Display for IpcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "IO error: {}", err),
+            Self::Serialize(err) => write!(f, "Failed to serialize request: {}", err),
+            Self::Deserialize(err) => write!(f, "Failed to parse response: {}", err),
+            Self::InvalidMessageType => {
+                write!(f, "Invalid message type. Use 'add', 'cmd', or 'state'.")
+            }
+            Self::InvalidAction(action) => write!(f, "Invalid action: {}", action),
+            Self::InvalidPath(msg) => write!(f, "Invalid path: {}", msg),
+            Self::ResponseTooLarge => write!(f, "Response payload too large"),
+            Self::NoTargets => write!(f, "No running instances of rsiv found."),
+            Self::ServerError(msg) => write!(f, "Server error: {}", msg),
+            Self::ConnectFailed(path) => write!(f, "Could not connect to instance at {:?}", path),
+            Self::NoSuccess => {
+                write!(f, "Failed to send message. Target instances may have crashed.")
+            }
+        }
+    }
+}
+
+impl Error for IpcError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            Self::Serialize(err) => Some(err),
+            Self::Deserialize(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for IpcError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
 pub fn get_socket_dir() -> PathBuf {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
     let dir = PathBuf::from(runtime_dir).join("rsiv");
@@ -41,32 +97,24 @@ pub fn get_latest_socket() -> PathBuf {
 
 const MAX_PAYLOAD_SIZE: usize = 1024 * 1024; // 1MB
 
-fn send_ipc_message(mut stream: UnixStream, req: &IpcRequest) -> Result<IpcResponse, String> {
-    let payload = serde_json::to_vec(req).map_err(|e| format!("Failed to serialize: {}", e))?;
+fn send_ipc_message(mut stream: UnixStream, req: &IpcRequest) -> Result<IpcResponse, IpcError> {
+    let payload = serde_json::to_vec(req).map_err(IpcError::Serialize)?;
     let len = payload.len() as u32;
-    stream
-        .write_all(&len.to_le_bytes())
-        .map_err(|e| format!("Write len failed: {}", e))?;
-    stream
-        .write_all(&payload)
-        .map_err(|e| format!("Write payload failed: {}", e))?;
+    stream.write_all(&len.to_le_bytes())?;
+    stream.write_all(&payload)?;
 
     let mut len_buf = [0u8; 4];
-    stream
-        .read_exact(&mut len_buf)
-        .map_err(|e| format!("Read len failed: {}", e))?;
+    stream.read_exact(&mut len_buf)?;
     let resp_len = u32::from_le_bytes(len_buf) as usize;
 
     if resp_len > MAX_PAYLOAD_SIZE {
-        return Err("Response payload too large".to_string());
+        return Err(IpcError::ResponseTooLarge);
     }
 
     let mut resp_buf = vec![0u8; resp_len];
-    stream
-        .read_exact(&mut resp_buf)
-        .map_err(|e| format!("Read payload failed: {}", e))?;
+    stream.read_exact(&mut resp_buf)?;
 
-    serde_json::from_slice(&resp_buf).map_err(|e| format!("Parse response failed: {}", e))
+    serde_json::from_slice(&resp_buf).map_err(IpcError::Deserialize)
 }
 
 // Client
@@ -75,23 +123,23 @@ pub fn send_message(
     payload: &str,
     target_pid: Option<u32>,
     broadcast_all: bool,
-) -> Result<(), String> {
+) -> Result<(), IpcError> {
     let req = match msg_type {
         "add" => {
             let path = Path::new(payload);
             let abs_path =
-                std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {}", e))?;
+                std::fs::canonicalize(path).map_err(|e| IpcError::InvalidPath(e.to_string()))?;
             IpcRequest::AddFile(abs_path)
         }
         "cmd" => {
             if let Some(action) = parse_action(payload) {
                 IpcRequest::RunAction(action)
             } else {
-                return Err(format!("Invalid action: {}", payload));
+                return Err(IpcError::InvalidAction(payload.to_string()));
             }
         }
         "state" => IpcRequest::GetState,
-        _ => return Err("Invalid message type. Use 'add', 'cmd', or 'state'.".to_string()),
+        _ => return Err(IpcError::InvalidMessageType),
     };
 
     let socket_dir = get_socket_dir();
@@ -116,7 +164,7 @@ pub fn send_message(
     }
 
     if targets.is_empty() {
-        return Err("No running instances of rsiv found.".to_string());
+        return Err(IpcError::NoTargets);
     }
 
     let mut success_count = 0;
@@ -129,18 +177,18 @@ pub fn send_message(
                     success_count += 1;
                 }
                 Ok(IpcResponse::Error(e)) => {
-                    return Err(format!("Server error: {}", e));
+                    return Err(IpcError::ServerError(e));
                 }
                 Err(e) => return Err(e),
             }
         } else if !broadcast_all {
             let _ = std::fs::remove_file(&target); // Clean up dead socket
-            return Err(format!("Could not connect to instance at {:?}", target));
+            return Err(IpcError::ConnectFailed(target));
         }
     }
 
     if success_count == 0 {
-        return Err("Failed to send message. Target instances may have crashed.".to_string());
+        return Err(IpcError::NoSuccess);
     }
     Ok(())
 }

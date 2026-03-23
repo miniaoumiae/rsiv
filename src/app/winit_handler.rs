@@ -82,12 +82,13 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::MetadataError(idx, path, err) => {
-                crate::rsiv_err!("Metadata error for {:?}: {}", path, err);
+                let err_str = err.to_string();
+                crate::rsiv_err!("Metadata error for {:?}: {}", path, err_str);
                 if let Some(slot) = self.gallery.all.get_mut(idx) {
-                    *slot = ImageSlot::Error(err.clone());
+                    *slot = ImageSlot::Error(err_str.clone());
                 }
                 if let Some(slot) = self.gallery.filtered.get_mut(idx) {
-                    *slot = ImageSlot::Error(err);
+                    *slot = ImageSlot::Error(err_str);
                 }
             }
             AppEvent::DiscoveryComplete => {
@@ -129,19 +130,20 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::LoadError(path, err) => {
-                crate::rsiv_err!("Failed to load image {:?}: {}", path, err);
+                let err_str = err.to_string();
+                crate::rsiv_err!("Failed to load image {:?}: {}", path, err_str);
                 self.assets.pending.remove(&path);
                 for slot in &mut self.gallery.all {
                     if let ImageSlot::MetadataLoaded(item) = slot {
                         if item.path == path {
-                            *slot = ImageSlot::Error(err.clone());
+                            *slot = ImageSlot::Error(err_str.clone());
                         }
                     }
                 }
                 for slot in &mut self.gallery.filtered {
                     if let ImageSlot::MetadataLoaded(item) = slot {
                         if item.path == path {
-                            *slot = ImageSlot::Error(err.clone());
+                            *slot = ImageSlot::Error(err_str.clone());
                         }
                     }
                 }
@@ -294,7 +296,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 let _ = p.send_event(AppEvent::MetadataError(
                                     idx,
                                     path.clone(),
-                                    "Invalid image".into(),
+                                    crate::loader::LoaderError::Other("Invalid image".into()),
                                 ));
                             });
 

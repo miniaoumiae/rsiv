@@ -7,7 +7,9 @@ use memmap2::Mmap;
 use rayon::prelude::*;
 use resvg::usvg::{Options, Tree};
 use std::collections::VecDeque;
+use std::error::Error;
 use std::fs::File;
+use std::fmt;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
@@ -18,11 +20,79 @@ use tiny_skia::{Pixmap, Transform};
 use walkdir::WalkDir;
 use winit::event_loop::EventLoopProxy;
 
+#[derive(Debug)]
+pub enum LoaderError {
+    Io(std::io::Error),
+    Image(image::ImageError),
+    SvgParse(String),
+    UnsupportedFormat(String),
+    Other(String),
+    MemoryLimit {
+        required_mb: u64,
+        available_mb: u64,
+        min_free_mb: u64,
+    },
+    PixmapAlloc { width: u32, height: u32 },
+    Thumbnail(Box<LoaderError>),
+}
+
+impl fmt::Display for LoaderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "IO error: {}", err),
+            Self::Image(err) => write!(f, "Image decode error: {}", err),
+            Self::SvgParse(msg) => write!(f, "SVG parse error: {}", msg),
+            Self::UnsupportedFormat(mime) => write!(f, "Not a recognized image format: {}", mime),
+            Self::Other(msg) => write!(f, "{}", msg),
+            Self::MemoryLimit {
+                required_mb,
+                available_mb,
+                min_free_mb,
+            } => write!(
+                f,
+                "OOM Guard: Image requires {} MB, but OS only has {} MB safely available (min free: {} MB).",
+                required_mb, available_mb, min_free_mb
+            ),
+            Self::PixmapAlloc { width, height } => {
+                write!(f, "Failed to create pixmap ({}x{})", width, height)
+            }
+            Self::Thumbnail(source) => write!(f, "Thumbnail error: {}", source),
+        }
+    }
+}
+
+impl Error for LoaderError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            Self::Image(err) => Some(err),
+            Self::Thumbnail(source) => Some(source),
+            Self::SvgParse(_)
+            | Self::UnsupportedFormat(_)
+            | Self::Other(_)
+            | Self::MemoryLimit { .. }
+            | Self::PixmapAlloc { .. } => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for LoaderError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err)
+    }
+}
+
+impl From<image::ImageError> for LoaderError {
+    fn from(err: image::ImageError) -> Self {
+        Self::Image(err)
+    }
+}
+
 // Discovery
-pub fn identify_format(path: &Path) -> Result<ImageFormat, String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+pub fn identify_format(path: &Path) -> Result<ImageFormat, LoaderError> {
+    let mut file = File::open(path)?;
     let mut buffer = [0; 1024];
-    let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
+    let n = file.read(&mut buffer)?;
     let data = &buffer[..n];
 
     let kind = infer::get(data);
@@ -37,13 +107,13 @@ pub fn identify_format(path: &Path) -> Result<ImageFormat, String> {
             if content.contains("<svg") {
                 Ok(ImageFormat::Svg)
             } else {
-                Err(format!("Not a recognized image format: {}", mime))
+                Err(LoaderError::UnsupportedFormat(mime.to_string()))
             }
         }
     }
 }
 
-pub fn probe_image(path: &Path, format: ImageFormat) -> Result<(u32, u32), String> {
+pub fn probe_image(path: &Path, format: ImageFormat) -> Result<(u32, u32), LoaderError> {
     match format {
         ImageFormat::Svg => {
             let opt = Options {
@@ -51,18 +121,16 @@ pub fn probe_image(path: &Path, format: ImageFormat) -> Result<(u32, u32), Strin
                 fontdb: Arc::new(crate::utils::get_svg_font_db().clone()),
                 ..Default::default()
             };
-            let data = std::fs::read(path).map_err(|e| e.to_string())?;
-            let tree = Tree::from_data(&data, &opt).map_err(|e| e.to_string())?;
+            let data = std::fs::read(path)?;
+            let tree =
+                Tree::from_data(&data, &opt).map_err(|e| LoaderError::SvgParse(e.to_string()))?;
             let size = tree.size().to_int_size();
             Ok((size.width(), size.height()))
         }
         ImageFormat::Raster => {
-            let reader = ImageReader::open(path)
-                .map_err(|e| e.to_string())?
-                .with_guessed_format()
-                .map_err(|e| e.to_string())?;
+            let reader = ImageReader::open(path)?.with_guessed_format()?;
 
-            let (mut width, mut height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+            let (mut width, mut height) = reader.into_dimensions()?;
 
             if let Some(orientation) = get_exif_orientation_path(path) {
                 if [5, 6, 7, 8].contains(&orientation) {
@@ -269,17 +337,17 @@ fn process_request(req: LoadRequest, proxy: &EventLoopProxy<AppEvent>) {
                     let _ = proxy.send_event(AppEvent::ThumbnailLoaded(path, Arc::new(thumb)));
                 }
                 Err(e) => {
-                    let _ = proxy
-                        .send_event(AppEvent::LoadError(path, format!("Thumbnail Error: {}", e)));
+                    let _ =
+                        proxy.send_event(AppEvent::LoadError(path, LoaderError::Thumbnail(Box::new(e))));
                 }
             }
         }
     }
 }
 
-fn load_full_image(path: &Path, format: ImageFormat) -> Result<LoadedAsset, String> {
-    let file = File::open(path).map_err(|e| e.to_string())?;
-    let mmap = unsafe { Mmap::map(&file).map_err(|e| e.to_string())? };
+fn load_full_image(path: &Path, format: ImageFormat) -> Result<LoadedAsset, LoaderError> {
+    let file = File::open(path)?;
+    let mmap = unsafe { Mmap::map(&file)? };
     let data = &mmap[..];
 
     match format {
@@ -292,15 +360,13 @@ fn load_thumbnail(
     path: &Path,
     format: ImageFormat,
     size: u32,
-) -> Result<(u32, u32, Vec<u8>), String> {
+) -> Result<(u32, u32, Vec<u8>), LoaderError> {
     if format == ImageFormat::Raster {
-        let file = File::open(path).map_err(|e| e.to_string())?;
-        let mmap = unsafe { Mmap::map(&file).map_err(|e| e.to_string())? };
+        let file = File::open(path)?;
+        let mmap = unsafe { Mmap::map(&file)? };
         let data = &mmap[..];
 
-        let mut reader = ImageReader::new(Cursor::new(data))
-            .with_guessed_format()
-            .map_err(|e| e.to_string())?;
+        let mut reader = ImageReader::new(Cursor::new(data)).with_guessed_format()?;
 
         let mut limits = image::Limits::default();
         limits.max_image_width = Some(32768);
@@ -310,20 +376,20 @@ fn load_thumbnail(
 
         // Instantly decodes the first frame of animated GIFs/PNGs/WebPs
         // without loading all frames into memory!
-        let img = reader.decode().map_err(|e| e.to_string())?;
+        let img = reader.decode()?;
         let img = apply_exif_orientation(img, data);
 
         let thumb = img.thumbnail(size, size);
         return Ok((thumb.width(), thumb.height(), thumb.to_rgba8().into_raw()));
     }
 
-    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+    let data = std::fs::read(path)?;
     let opt = Options {
         resources_dir: path.parent().map(|p| p.to_path_buf()),
         fontdb: Arc::new(crate::utils::get_svg_font_db().clone()),
         ..Default::default()
     };
-    let tree = Tree::from_data(&data, &opt).map_err(|e| format!("SVG Parse Error: {}", e))?;
+    let tree = Tree::from_data(&data, &opt).map_err(|e| LoaderError::SvgParse(e.to_string()))?;
     let size_i = tree.size().to_int_size();
     let (base_w, base_h) = (size_i.width(), size_i.height());
 
@@ -336,7 +402,8 @@ fn load_thumbnail(
     let nwidth = nwidth.max(1);
     let nheight = nheight.max(1);
 
-    let mut pixmap = Pixmap::new(nwidth, nheight).ok_or("Failed to create pixmap")?;
+    let mut pixmap = Pixmap::new(nwidth, nheight)
+        .ok_or(LoaderError::PixmapAlloc { width: nwidth, height: nheight })?;
     let scale = nwidth as f32 / base_w as f32;
     let ts = Transform::from_scale(scale, scale);
     resvg::render(&tree, ts, &mut pixmap.as_mut());
@@ -388,7 +455,7 @@ fn check_memory_before_decode(
     required_width: u32,
     required_height: u32,
     frames: u32,
-) -> Result<(), String> {
+) -> Result<(), LoaderError> {
     let required_bytes = (required_width as u64) * (required_height as u64) * 4 * (frames as u64);
 
     let mut sys = System::new();
@@ -401,24 +468,25 @@ fn check_memory_before_decode(
         ((total_bytes as f64) * (config.options.min_free_memory_percent / 100.0)) as u64;
 
     if available_bytes.saturating_sub(required_bytes) < min_free_bytes {
-        return Err(format!(
-            "OOM Guard: Image requires {} MB, but OS only has {} MB safely available.",
-            required_bytes / 1024 / 1024,
-            available_bytes / 1024 / 1024
-        ));
+        return Err(LoaderError::MemoryLimit {
+            required_mb: required_bytes / 1024 / 1024,
+            available_mb: available_bytes / 1024 / 1024,
+            min_free_mb: min_free_bytes / 1024 / 1024,
+        });
     }
     Ok(())
 }
 
 // Decoding Helpers
-fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedAsset, String> {
+fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedAsset, LoaderError> {
     let opt = Options {
         resources_dir: path_obj.parent().map(|p| p.to_path_buf()),
         fontdb: Arc::new(crate::utils::get_svg_font_db().clone()),
         ..Default::default()
     };
 
-    let tree = Tree::from_data(file_data, &opt).map_err(|e| format!("SVG Parse Error: {}", e))?;
+    let tree =
+        Tree::from_data(file_data, &opt).map_err(|e| LoaderError::SvgParse(e.to_string()))?;
     let size = tree.size().to_int_size();
     Ok(LoadedAsset::Vector {
         tree: Arc::new(tree),
@@ -428,7 +496,7 @@ fn decode_svg(file_data: &[u8], path_obj: &Path) -> Result<LoadedAsset, String> 
     })
 }
 
-fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedAsset, String> {
+fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedAsset, LoaderError> {
     let cursor = Cursor::new(file_data);
     let format = ImageReader::new(cursor)
         .with_guessed_format()
@@ -489,17 +557,13 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedAsset, String> 
 
     // Static image (or a GIF/WebP with only 1 frame)
     let cursor = Cursor::new(file_data);
-    let reader = ImageReader::new(cursor)
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?;
+    let reader = ImageReader::new(cursor).with_guessed_format()?;
 
-    let (width, height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+    let (width, height) = reader.into_dimensions()?;
     check_memory_before_decode(width, height, 1)?;
 
     let cursor = Cursor::new(file_data);
-    let mut reader = ImageReader::new(cursor)
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?;
+    let mut reader = ImageReader::new(cursor).with_guessed_format()?;
 
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(65536);
@@ -512,7 +576,7 @@ fn decode_raster(file_data: &[u8], _path: &Path) -> Result<LoadedAsset, String> 
     limits.max_alloc = Some(sys.available_memory().saturating_sub(min_free_bytes));
     reader.limits(limits);
 
-    let img = reader.decode().map_err(|e| e.to_string())?;
+    let img = reader.decode()?;
 
     // Apply EXIF
     let img = apply_exif_orientation(img, file_data);
