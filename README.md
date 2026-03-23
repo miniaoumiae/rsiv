@@ -109,6 +109,17 @@ grid_padding = 20
 For a full explanation of all options, see **[docs/CONFIGURATION.md](./docs/CONFIGURATION.md)**.
 You can find the default keybindings there as well.
 
+## IPC (remote control)
+
+`rsiv` exposes a simple IPC interface so you can control a running instance from scripts.
+Use the `msg` subcommand to send messages:
+
+```sh
+rsiv msg <add|cmd|state> [PAYLOAD] [--target <PID> | --all]
+```
+
+See **[docs/IPC.md](./docs/IPC.md)** for details, supported actions, and socket behavior.
+
 ## Features Roadmap
 
 - [x] Image rendering
