@@ -4,7 +4,7 @@ use crate::keybinds::Action;
 use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
-use winit::event::{MouseButton, WindowEvent};
+use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
@@ -381,6 +381,74 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                             }
                         }
+                    }
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let scroll_y = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y as f64,
+                    MouseScrollDelta::PixelDelta(pos) => pos.y,
+                };
+
+                if scroll_y == 0.0 {
+                    return;
+                }
+
+                if self.camera.grid_mode {
+                    let action = if scroll_y > 0.0 {
+                        Action::GridMoveUp
+                    } else {
+                        Action::GridMoveDown
+                    };
+                    let count = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y.abs().ceil() as usize,
+                        MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / 40.0).ceil() as usize,
+                    }
+                    .max(1);
+
+                    let needs_redraw = self.handle_grid_movement_action(action, count);
+                    if needs_redraw {
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
+                    }
+                    return;
+                }
+
+                let action = if scroll_y > 0.0 {
+                    Action::ZoomIn
+                } else {
+                    Action::ZoomOut
+                };
+
+                let old_scale = self.get_current_scale();
+                let old_off_x = self.camera.off_x;
+                let old_off_y = self.camera.off_y;
+                let needs_redraw = self.dispatch_action(action, _el);
+
+                if needs_redraw {
+                    let new_scale = self.get_current_scale();
+                    if (new_scale - old_scale).abs() > f64::EPSILON {
+                        if let (Some((buf_w, buf_h)), Some((mx, my))) =
+                            (self.get_available_window_size(), self.cursor.pos)
+                        {
+                            let clamped_x = mx.clamp(0.0, buf_w);
+                            let clamped_y = my.clamp(0.0, buf_h);
+                            let dx = clamped_x - (buf_w / 2.0);
+                            let dy = clamped_y - (buf_h / 2.0);
+                            let ratio = new_scale / old_scale;
+                            self.camera.off_x =
+                                (ratio * old_off_x as f64 + (1.0 - ratio) * dx) as i32;
+                            self.camera.off_y =
+                                (ratio * old_off_y as f64 + (1.0 - ratio) * dy) as i32;
+                            self.clamp_offsets();
+                        }
+                    }
+                }
+
+                if needs_redraw {
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
                     }
                 }
             }
