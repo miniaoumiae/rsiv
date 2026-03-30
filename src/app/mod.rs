@@ -156,6 +156,9 @@ impl App {
                 zone: CursorZone::None,
                 next_icon: None,
                 prev_icon: None,
+                is_dragging: false,
+                drag_start_pos: None,
+                camera_start_pos: None,
             },
             assets: AssetManager {
                 loader: Loader::new(proxy.clone()),

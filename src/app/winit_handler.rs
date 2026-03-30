@@ -330,7 +330,25 @@ impl ApplicationHandler<AppEvent> for App {
                 self.input.modifiers = modifiers.state();
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor.pos = Some((position.x, position.y));
+                let current_pos = (position.x, position.y);
+                self.cursor.pos = Some(current_pos);
+
+                if self.cursor.is_dragging {
+                    if let (Some((start_x, start_y)), Some((cam_x, cam_y))) =
+                        (self.cursor.drag_start_pos, self.cursor.camera_start_pos)
+                    {
+                        let dx = current_pos.0 - start_x;
+                        let dy = current_pos.1 - start_y;
+
+                        self.camera.off_x = cam_x + dx as i32;
+                        self.camera.off_y = cam_y + dy as i32;
+                        self.clamp_offsets();
+
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
+                    }
+                }
                 if let Some(w) = &self.window {
                     let width = w.inner_size().width as f64;
                     self.cursor.refresh_icon(
@@ -349,38 +367,59 @@ impl ApplicationHandler<AppEvent> for App {
                 self.cursor.set_zone(CursorZone::None, self.window.as_ref());
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if state.is_pressed() && button == MouseButton::Left {
-                    if let Some((x, _)) = self.cursor.pos {
-                        let width = self
-                            .window
-                            .as_ref()
-                            .map(|w| w.inner_size().width as f64)
-                            .unwrap_or(0.0);
-                        if self.cursor.is_in_next_zone(
-                            x,
-                            width,
-                            self.camera.grid_mode,
-                            &self.input.mode,
-                        ) {
-                            let needs_redraw = self.handle_navigation_action(Action::NextImage, 1);
-                            if needs_redraw {
-                                if let Some(w) = &self.window {
-                                    w.request_redraw();
-                                }
+                if button == MouseButton::Left {
+                    if state.is_pressed() {
+                        if let Some((x, y)) = self.cursor.pos {
+                            if !self.camera.grid_mode {
+                                self.cursor.is_dragging = true;
+                                self.cursor.drag_start_pos = Some((x, y));
+                                self.cursor.camera_start_pos =
+                                    Some((self.camera.off_x, self.camera.off_y));
                             }
-                        } else if self.cursor.is_in_prev_zone(
-                            x,
-                            width,
-                            self.camera.grid_mode,
-                            &self.input.mode,
-                        ) {
-                            let needs_redraw = self.handle_navigation_action(Action::PrevImage, 1);
-                            if needs_redraw {
-                                if let Some(w) = &self.window {
-                                    w.request_redraw();
+                        }
+                    } else if self.cursor.is_dragging {
+                        if let (Some((start_x, start_y)), Some((end_x, end_y))) =
+                            (self.cursor.drag_start_pos, self.cursor.pos)
+                        {
+                            let dx = (end_x - start_x).abs();
+                            let dy = (end_y - start_y).abs();
+
+                            if dx < 5.0 && dy < 5.0 {
+                                let width = self
+                                    .window
+                                    .as_ref()
+                                    .map(|w| w.inner_size().width as f64)
+                                    .unwrap_or(0.0);
+                                let mut needs_redraw = false;
+
+                                if self.cursor.is_in_next_zone(
+                                    end_x,
+                                    width,
+                                    self.camera.grid_mode,
+                                    &self.input.mode,
+                                ) {
+                                    needs_redraw =
+                                        self.handle_navigation_action(Action::NextImage, 1);
+                                } else if self.cursor.is_in_prev_zone(
+                                    end_x,
+                                    width,
+                                    self.camera.grid_mode,
+                                    &self.input.mode,
+                                ) {
+                                    needs_redraw =
+                                        self.handle_navigation_action(Action::PrevImage, 1);
+                                }
+
+                                if needs_redraw {
+                                    if let Some(w) = &self.window {
+                                        w.request_redraw();
+                                    }
                                 }
                             }
                         }
+                        self.cursor.is_dragging = false;
+                        self.cursor.drag_start_pos = None;
+                        self.cursor.camera_start_pos = None;
                     }
                 }
             }

@@ -15,6 +15,9 @@ pub struct CursorState {
     pub zone: CursorZone,
     pub next_icon: Option<CustomCursor>,
     pub prev_icon: Option<CustomCursor>,
+    pub is_dragging: bool,
+    pub drag_start_pos: Option<(f64, f64)>,
+    pub camera_start_pos: Option<(i32, i32)>,
 }
 
 impl CursorState {
