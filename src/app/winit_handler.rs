@@ -370,7 +370,13 @@ impl ApplicationHandler<AppEvent> for App {
                 if button == MouseButton::Left {
                     if state.is_pressed() {
                         if let Some((x, y)) = self.cursor.pos {
-                            if !self.camera.grid_mode {
+                            if self.camera.grid_mode {
+                                if self.handle_grid_click(x, y) {
+                                    if let Some(w) = &self.window {
+                                        w.request_redraw();
+                                    }
+                                }
+                            } else {
                                 self.cursor.is_dragging = true;
                                 self.cursor.drag_start_pos = Some((x, y));
                                 self.cursor.camera_start_pos =
@@ -420,6 +426,15 @@ impl ApplicationHandler<AppEvent> for App {
                         self.cursor.is_dragging = false;
                         self.cursor.drag_start_pos = None;
                         self.cursor.camera_start_pos = None;
+                    }
+                } else if button == MouseButton::Right {
+                    if state.is_pressed() {
+                        let needs_redraw = self.dispatch_action(Action::ToggleGrid, _el);
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
                     }
                 }
             }

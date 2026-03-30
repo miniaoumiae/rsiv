@@ -6,6 +6,59 @@ use std::time::{Duration, Instant};
 use winit::event_loop::ActiveEventLoop;
 
 impl App {
+    pub fn handle_grid_click(&mut self, mouse_x: f64, mouse_y: f64) -> bool {
+        if !self.camera.grid_mode || self.gallery.filtered.is_empty() {
+            return false;
+        }
+
+        let Some(w) = &self.window else {
+            return false;
+        };
+        let size = w.inner_size();
+        let buf_w = size.width as u32;
+        let mut buf_h = size.height as u32;
+
+        if self.show_status_bar {
+            buf_h = buf_h.saturating_sub(self.status_bar.height);
+        }
+        if mouse_y >= buf_h as f64 {
+            return false;
+        }
+
+        let config = crate::config::AppConfig::get();
+        let cell_size = config.options.thumbnail_size + config.options.grid_padding;
+        let cols = (buf_w / cell_size).max(1);
+        let grid_width = cols * cell_size;
+        let margin_x = (buf_w.saturating_sub(grid_width)) / 2 + config.options.grid_padding / 2;
+
+        let current_row = (self.gallery.current_index as u32) / cols;
+        let scroll_y = if current_row * cell_size > buf_h / 2 {
+            (current_row * cell_size) as i32 - (buf_h as i32 / 2) + (cell_size as i32 / 2)
+        } else {
+            0
+        };
+
+        let x_rel = mouse_x as i32 - margin_x as i32;
+        let y_rel = mouse_y as i32 + scroll_y - (config.options.grid_padding as i32 / 2);
+
+        if x_rel < 0 || x_rel >= (cols * cell_size) as i32 || y_rel < 0 {
+            return false;
+        }
+
+        let col = x_rel as u32 / cell_size;
+        let row = y_rel as u32 / cell_size;
+        let clicked_idx = (row * cols + col) as usize;
+
+        if clicked_idx < self.gallery.filtered.len() {
+            self.gallery.current_index = clicked_idx;
+            self.camera.grid_mode = false;
+            self.reset_view_for_new_image();
+            return true;
+        }
+
+        false
+    }
+
     pub fn reset_view_for_new_image(&mut self) {
         self.camera.off_x = 0;
         self.camera.off_y = 0;
