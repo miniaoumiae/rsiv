@@ -263,21 +263,16 @@ impl App {
                     }
                 };
 
-            let (current_frame, total_frames) = if !self.gallery.filtered.is_empty() {
-                if let ImageSlot::MetadataLoaded(item) =
-                    &self.gallery.filtered[self.gallery.current_index]
-                {
-                    if let Some(img) = self.assets.cache.get_image(&item.path) {
-                        (self.playback.current_frame_index + 1, img.frame_count())
-                    } else {
-                        (0, 0)
-                    }
-                } else {
-                    (0, 0)
-                }
-            } else {
-                (0, 0)
-            };
+            let (current_frame, total_frames) = self
+                .gallery
+                .filtered
+                .get(self.gallery.current_index)
+                .and_then(|slot| match slot {
+                    ImageSlot::MetadataLoaded(item) => self.assets.cache.get_image(&item.path),
+                    _ => None,
+                })
+                .map(|img| (self.playback.current_frame_index + 1, img.frame_count()))
+                .unwrap_or((0, 0));
 
             let spinner_frame = if self.input.is_handler_running {
                 if let Some(w) = &self.window {
