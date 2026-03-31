@@ -1,4 +1,5 @@
 use crate::app::InputMode;
+use std::time::Instant;
 use std::sync::Arc;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{CursorIcon, CustomCursor, Window};
@@ -18,6 +19,10 @@ pub struct CursorState {
     pub is_dragging: bool,
     pub drag_start_pos: Option<(f64, f64)>,
     pub camera_start_pos: Option<(i32, i32)>,
+    pub last_left_click_time: Option<Instant>,
+    pub last_left_click_pos: Option<(f64, f64)>,
+    pub last_moved: Instant,
+    pub is_visible: bool,
 }
 
 impl CursorState {

@@ -1,3 +1,4 @@
+use crate::keybinds::Action;
 use crate::view_mode::ViewMode;
 use serde::Deserialize;
 use serde::de::Deserializer;
@@ -12,6 +13,7 @@ static CONFIG: OnceLock<AppConfig> = OnceLock::new();
 #[serde(default)]
 pub struct AppConfig {
     pub keybindings: Keybindings,
+    pub mousebindings: MouseBindings,
     pub ui: Ui,
     pub options: Options,
     pub handlers: std::collections::HashMap<String, Vec<String>>,
@@ -59,6 +61,40 @@ impl AppConfig {
 
 #[derive(Debug, Clone, Default)]
 pub struct BindingList(pub Vec<String>);
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct MouseBindings {
+    pub left_click_left_zone: Action,
+    pub left_click_right_zone: Action,
+    pub right_click: Action,
+    pub middle_click: Action,
+    pub back_button: Action,
+    pub forward_button: Action,
+    pub double_click: Action,
+    pub scroll_up: Action,
+    pub scroll_down: Action,
+    pub grid_scroll_up: Action,
+    pub grid_scroll_down: Action,
+}
+
+impl Default for MouseBindings {
+    fn default() -> Self {
+        Self {
+            left_click_left_zone: Action::PrevImage,
+            left_click_right_zone: Action::NextImage,
+            right_click: Action::ToggleGrid,
+            middle_click: Action::ResetView,
+            back_button: Action::PrevImage,
+            forward_button: Action::NextImage,
+            double_click: Action::ToggleZoomFit,
+            scroll_up: Action::ZoomIn,
+            scroll_down: Action::ZoomOut,
+            grid_scroll_up: Action::GridMoveUp,
+            grid_scroll_down: Action::GridMoveDown,
+        }
+    }
+}
 
 impl<'de> Deserialize<'de> for BindingList {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

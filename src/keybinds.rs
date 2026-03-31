@@ -44,6 +44,7 @@ pub enum Action {
     RotateCCW,
     FlipHorizontal,
     FlipVertical,
+    ToggleZoomFit,
 
     // Grid Mode Specific
     GridMoveLeft,

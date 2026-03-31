@@ -18,10 +18,6 @@ impl App {
                     self.handle_navigation_action(Action::NextImage, 1);
                     self.playback.last_slide_time = now;
                 }
-                // Keep the loop running for slideshow
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
             }
 
             // Request Logic
@@ -142,9 +138,6 @@ impl App {
                                 self.playback.frame_timer = Duration::ZERO;
                                 self.playback.current_frame_index =
                                     (self.playback.current_frame_index + 1) % frame_count;
-                            }
-                            if let Some(w) = &self.window {
-                                w.request_redraw();
                             }
                         }
                     }

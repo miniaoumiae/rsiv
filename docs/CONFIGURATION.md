@@ -286,6 +286,86 @@ Z = [
 ]
 ```
 
+## MOUSEBINDINGS
+
+This section documents the `[mousebindings]` table. It maps mouse clicks, thumb
+buttons, and scroll wheel movements to specific actions.
+
+Actions are defined as strings (for example: `"NextImage"`, `"ZoomIn"`,
+`"ToggleGrid"`). You can use any of the actions listed in the Keybindings
+section.
+
+**left_click_left_zone** = `string`
+
+> The action triggered when left-clicking the left 20% of the image view.
+>
+> **Default:** `"PrevImage"`
+
+**left_click_right_zone** = `string`
+
+> The action triggered when left-clicking the right 20% of the image view.
+>
+> **Default:** `"NextImage"`
+
+**right_click** = `string`
+
+> The action triggered when right-clicking anywhere in the window.
+>
+> **Default:** `"ToggleGrid"`
+
+**middle_click** = `string`
+
+> The action triggered when pressing the middle mouse button (scroll wheel
+> click).
+>
+> **Default:** `"ResetView"`
+
+**double_click** = `string`
+
+> The action triggered when rapidly double-clicking the left mouse button.
+>
+> **Default:** `"ToggleZoomFit"`
+
+**back_button** = `string`
+
+> The action triggered by the mouse's physical "Back" thumb button.
+>
+> **Default:** `"PrevImage"`
+
+**forward_button** = `string`
+
+> The action triggered by the mouse's physical "Forward" thumb button.
+>
+> **Default:** `"NextImage"`
+
+**scroll_up** = `string`
+
+> The action triggered when scrolling the mouse wheel up in the standard image
+> view.
+>
+> **Default:** `"ZoomIn"`
+
+**scroll_down** = `string`
+
+> The action triggered when scrolling the mouse wheel down in the standard
+> image view.
+>
+> **Default:** `"ZoomOut"`
+
+**grid_scroll_up** = `string`
+
+> The action triggered when scrolling the mouse wheel up while in Grid/Thumbnail
+> mode.
+>
+> **Default:** `"GridMoveUp"`
+
+**grid_scroll_down** = `string`
+
+> The action triggered when scrolling the mouse wheel down while in
+> Grid/Thumbnail mode.
+>
+> **Default:** `"GridMoveDown"`
+
 ## KEYBINDINGS
 
 This section documents the `[keybindings]` table.

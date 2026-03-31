@@ -1,6 +1,5 @@
 use crate::app::{App, AppEvent, CursorZone, InputMode};
 use crate::image_item::ImageSlot;
-use crate::keybinds::Action;
 use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
@@ -332,6 +331,13 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::CursorMoved { position, .. } => {
                 let current_pos = (position.x, position.y);
                 self.cursor.pos = Some(current_pos);
+                self.cursor.last_moved = std::time::Instant::now();
+                if !self.cursor.is_visible {
+                    self.cursor.is_visible = true;
+                    if let Some(w) = &self.window {
+                        w.set_cursor_visible(true);
+                    }
+                }
 
                 if self.cursor.is_dragging {
                     if let (Some((start_x, start_y)), Some((cam_x, cam_y))) =
@@ -367,10 +373,41 @@ impl ApplicationHandler<AppEvent> for App {
                 self.cursor.set_zone(CursorZone::None, self.window.as_ref());
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                let config = crate::config::AppConfig::get();
                 if button == MouseButton::Left {
                     if state.is_pressed() {
                         if let Some((x, y)) = self.cursor.pos {
-                            if self.camera.grid_mode {
+                            let now = std::time::Instant::now();
+                            let mut is_double_click = false;
+
+                            if let (Some(last_time), Some((last_x, last_y))) = (
+                                self.cursor.last_left_click_time,
+                                self.cursor.last_left_click_pos,
+                            ) {
+                                if now.duration_since(last_time)
+                                    < std::time::Duration::from_millis(300)
+                                {
+                                    let dx = (x - last_x).abs();
+                                    let dy = (y - last_y).abs();
+                                    if dx < 5.0 && dy < 5.0 {
+                                        is_double_click = true;
+                                    }
+                                }
+                            }
+
+                            self.cursor.last_left_click_time = Some(now);
+                            self.cursor.last_left_click_pos = Some((x, y));
+
+                            if is_double_click && !self.camera.grid_mode {
+                                let needs_redraw =
+                                    self.dispatch_action(config.mousebindings.double_click, _el);
+                                if needs_redraw {
+                                    if let Some(w) = &self.window {
+                                        w.request_redraw();
+                                    }
+                                }
+                                self.cursor.is_dragging = false;
+                            } else if self.camera.grid_mode {
                                 if self.handle_grid_click(x, y) {
                                     if let Some(w) = &self.window {
                                         w.request_redraw();
@@ -404,16 +441,20 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.camera.grid_mode,
                                     &self.input.mode,
                                 ) {
-                                    needs_redraw =
-                                        self.handle_navigation_action(Action::NextImage, 1);
+                                    needs_redraw = self.dispatch_action(
+                                        config.mousebindings.left_click_right_zone,
+                                        _el,
+                                    );
                                 } else if self.cursor.is_in_prev_zone(
                                     end_x,
                                     width,
                                     self.camera.grid_mode,
                                     &self.input.mode,
                                 ) {
-                                    needs_redraw =
-                                        self.handle_navigation_action(Action::PrevImage, 1);
+                                    needs_redraw = self.dispatch_action(
+                                        config.mousebindings.left_click_left_zone,
+                                        _el,
+                                    );
                                 }
 
                                 if needs_redraw {
@@ -429,7 +470,38 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 } else if button == MouseButton::Right {
                     if state.is_pressed() {
-                        let needs_redraw = self.dispatch_action(Action::ToggleGrid, _el);
+                        let needs_redraw =
+                            self.dispatch_action(config.mousebindings.right_click, _el);
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                    }
+                } else if button == MouseButton::Middle {
+                    if state.is_pressed() {
+                        let needs_redraw =
+                            self.dispatch_action(config.mousebindings.middle_click, _el);
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                    }
+                } else if button == MouseButton::Back {
+                    if state.is_pressed() {
+                        let needs_redraw =
+                            self.dispatch_action(config.mousebindings.back_button, _el);
+                        if needs_redraw {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        }
+                    }
+                } else if button == MouseButton::Forward {
+                    if state.is_pressed() {
+                        let needs_redraw =
+                            self.dispatch_action(config.mousebindings.forward_button, _el);
                         if needs_redraw {
                             if let Some(w) = &self.window {
                                 w.request_redraw();
@@ -448,32 +520,26 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
 
-                if self.camera.grid_mode {
-                    let action = if scroll_y > 0.0 {
-                        Action::GridMoveUp
+                let config = crate::config::AppConfig::get();
+                let action = if self.camera.grid_mode {
+                    if scroll_y > 0.0 {
+                        config.mousebindings.grid_scroll_up
                     } else {
-                        Action::GridMoveDown
-                    };
-                    let count = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y.abs().ceil() as usize,
-                        MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / 40.0).ceil() as usize,
+                        config.mousebindings.grid_scroll_down
                     }
-                    .max(1);
-
-                    let needs_redraw = self.handle_grid_movement_action(action, count);
-                    if needs_redraw {
-                        if let Some(w) = &self.window {
-                            w.request_redraw();
-                        }
-                    }
-                    return;
-                }
-
-                let action = if scroll_y > 0.0 {
-                    Action::ZoomIn
+                } else if scroll_y > 0.0 {
+                    config.mousebindings.scroll_up
                 } else {
-                    Action::ZoomOut
+                    config.mousebindings.scroll_down
                 };
+
+                let count = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y.abs().ceil() as usize,
+                    MouseScrollDelta::PixelDelta(pos) => (pos.y.abs() / 40.0).ceil() as usize,
+                }
+                .max(1);
+
+                self.input.prefix_count = Some(count);
 
                 let old_scale = self.get_current_scale();
                 let old_off_x = self.camera.off_x;
@@ -653,6 +719,75 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             _ => (),
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let mut next_wakeup = None;
+        let now = std::time::Instant::now();
+
+        if self.cursor.is_visible {
+            let hide_time = self.cursor.last_moved + std::time::Duration::from_secs(2);
+            if now >= hide_time {
+                if let Some(w) = &self.window {
+                    w.set_cursor_visible(false);
+                }
+                self.cursor.is_visible = false;
+            } else {
+                next_wakeup = Some(hide_time);
+            }
+        }
+
+        if self.playback.slideshow_on {
+            let slide_time = self.playback.last_slide_time + self.playback.slideshow_delay;
+            if now >= slide_time {
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            } else {
+                next_wakeup = match next_wakeup {
+                    Some(t) => Some(t.min(slide_time)),
+                    None => Some(slide_time),
+                };
+            }
+        }
+
+        if !self.camera.grid_mode && self.playback.is_playing && !self.gallery.filtered.is_empty()
+        {
+            if let ImageSlot::MetadataLoaded(item) =
+                &self.gallery.filtered[self.gallery.current_index]
+            {
+                if let Some(img) = self.assets.cache.get_image(&item.path) {
+                    if img.frame_count() > 1 {
+                        let current_delay = img.frame_delay(self.playback.current_frame_index);
+                        let effective_delay = if current_delay.is_zero() {
+                            std::time::Duration::from_millis(100)
+                        } else {
+                            current_delay
+                        };
+
+                        let frame_time = self.playback.last_update
+                            + effective_delay.saturating_sub(self.playback.frame_timer);
+
+                        if now >= frame_time {
+                            if let Some(w) = &self.window {
+                                w.request_redraw();
+                            }
+                        } else {
+                            next_wakeup = match next_wakeup {
+                                Some(t) => Some(t.min(frame_time)),
+                                None => Some(frame_time),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(wakeup) = next_wakeup {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wakeup));
+        } else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
     }
 }

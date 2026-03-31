@@ -104,7 +104,7 @@ impl App {
                 let redraw = self.handle_navigation_action(other_action, count)
                     || self.handle_grid_movement_action(other_action, count)
                     || self.handle_image_ops_action(other_action, count)
-                    || self.handle_view_action(other_action, old_scale)
+                    || self.handle_view_action(other_action, old_scale, count)
                     || self.handle_toggle_action(other_action, raw_prefix);
 
                 if matches!(other_action, Action::RemoveImage) && self.gallery.all.is_empty() {
@@ -353,7 +353,7 @@ impl App {
         needs_redraw
     }
 
-    pub fn handle_view_action(&mut self, action: Action, old_scale: f64) -> bool {
+    pub fn handle_view_action(&mut self, action: Action, old_scale: f64, count: usize) -> bool {
         let mut needs_redraw = false;
         let mut changed_scale = false;
         let config = crate::config::AppConfig::get();
@@ -365,6 +365,18 @@ impl App {
         };
 
         match action {
+            Action::ToggleZoomFit => {
+                if self.camera.mode == ViewMode::Absolute {
+                    self.camera.mode = ViewMode::BestFit;
+                } else {
+                    self.camera.mode = ViewMode::Absolute;
+                }
+                if config.options.auto_center {
+                    self.camera.off_x = 0;
+                    self.camera.off_y = 0;
+                }
+                changed_scale = true;
+            }
             Action::ResetView => {
                 self.camera.off_x = 0;
                 self.camera.off_y = 0;
@@ -411,19 +423,19 @@ impl App {
                 needs_redraw = true;
             }
             Action::PanLeft => {
-                self.camera.off_x += step;
+                self.camera.off_x += step * count as i32;
                 needs_redraw = true;
             }
             Action::PanRight => {
-                self.camera.off_x -= step;
+                self.camera.off_x -= step * count as i32;
                 needs_redraw = true;
             }
             Action::PanUp => {
-                self.camera.off_y += step;
+                self.camera.off_y += step * count as i32;
                 needs_redraw = true;
             }
             Action::PanDown => {
-                self.camera.off_y -= step;
+                self.camera.off_y -= step * count as i32;
                 needs_redraw = true;
             }
             Action::PanToLeftEdge => {
@@ -475,13 +487,15 @@ impl App {
                 needs_redraw = true;
             }
             Action::ZoomIn => {
+                let multiplier = zoom_step.powi(count as i32);
                 self.camera.mode =
-                    ViewMode::Zoom((old_scale * zoom_step).min(config.options.zoom_max));
+                    ViewMode::Zoom((old_scale * multiplier).min(config.options.zoom_max));
                 changed_scale = true;
             }
             Action::ZoomOut => {
+                let multiplier = zoom_step.powi(count as i32);
                 self.camera.mode =
-                    ViewMode::Zoom((old_scale / zoom_step).max(config.options.zoom_min));
+                    ViewMode::Zoom((old_scale / multiplier).max(config.options.zoom_min));
                 changed_scale = true;
             }
             _ => {}

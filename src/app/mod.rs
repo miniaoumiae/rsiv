@@ -159,6 +159,10 @@ impl App {
                 is_dragging: false,
                 drag_start_pos: None,
                 camera_start_pos: None,
+                last_left_click_time: None,
+                last_left_click_pos: None,
+                last_moved: Instant::now(),
+                is_visible: true,
             },
             assets: AssetManager {
                 loader: Loader::new(proxy.clone()),
