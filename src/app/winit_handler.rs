@@ -268,6 +268,10 @@ impl ApplicationHandler<AppEvent> for App {
                             self.gallery.all.push(ImageSlot::PendingMetadata);
                             self.gallery.apply_filter();
 
+                            if let Some(watcher) = &self.watcher {
+                                watcher.watch(&path);
+                            }
+
                             // Jump to the newly added image
                             self.gallery.current_index =
                                 self.gallery.filtered.len().saturating_sub(1);

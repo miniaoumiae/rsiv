@@ -141,7 +141,13 @@ fn main() {
         ipc::spawn_ipc_server(proxy.clone());
     }
 
-    let mut app = App::new(vec![], cli.thumbnail, proxy.clone());
+    let watcher = if !cli.no_watch {
+        watcher::FileWatcher::new(canonical_paths.clone(), cli.recursive, proxy.clone())
+    } else {
+        None
+    };
+
+    let mut app = App::new(vec![], cli.thumbnail, proxy.clone(), watcher);
 
     loader::spawn_discovery_worker(
         canonical_paths.clone(),
@@ -150,10 +156,6 @@ fn main() {
         cli.hidden,
         proxy.clone(),
     );
-    if !cli.no_watch {
-        watcher::spawn_watcher(canonical_paths, cli.recursive, proxy.clone());
-    }
-
     let _ = event_loop.run_app(&mut app);
 
     if !cli.no_ipc {

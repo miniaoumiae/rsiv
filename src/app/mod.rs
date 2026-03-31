@@ -104,6 +104,7 @@ pub struct App {
     pub window: Option<Arc<Window>>,
     pub pixels: Option<Pixels<'static>>,
     pub proxy: EventLoopProxy<AppEvent>,
+    pub watcher: Option<crate::watcher::FileWatcher>,
 
     // Top-level UI components
     pub status_bar: StatusBar,
@@ -115,6 +116,7 @@ impl App {
         images: Vec<ImageSlot>,
         start_in_grid_mode: bool,
         proxy: EventLoopProxy<AppEvent>,
+        watcher: Option<crate::watcher::FileWatcher>,
     ) -> Self {
         let config = crate::config::AppConfig::get();
 
@@ -172,6 +174,7 @@ impl App {
             window: None,
             pixels: None,
             proxy,
+            watcher,
             status_bar: StatusBar::new(),
             show_status_bar: true,
         }
