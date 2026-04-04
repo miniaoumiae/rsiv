@@ -26,42 +26,47 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::platform::x11::WindowAttributesExtX11;
 
 impl ApplicationHandler<AppEvent> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let mut attributes = winit::window::Window::default_attributes().with_title("rsiv");
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd",
-            target_os = "openbsd"
-        ))]
-        {
-            attributes = WindowAttributesExtWayland::with_name(attributes, "rsiv", "rsiv");
-            attributes = WindowAttributesExtX11::with_name(attributes, "rsiv", "rsiv");
-        }
-
-        let window = Arc::new(event_loop.create_window(attributes).unwrap());
-        let size = window.inner_size();
-        let surface_texture = SurfaceTexture::new(size.width, size.height, window.clone());
-        let pixels = Pixels::new(size.width, size.height, surface_texture).unwrap();
-
-        self.window = Some(window.clone());
-        self.pixels = Some(pixels);
-
-        let scale_factor = window.scale_factor();
-        self.status_bar.set_scale(scale_factor as f32);
-        self.cursor.next_icon = crate::app::build_cursor(event_loop, true);
-        self.cursor.prev_icon = crate::app::build_cursor(event_loop, false);
-    }
-
-    fn user_event(&mut self, _el: &ActiveEventLoop, event: AppEvent) {
+    fn user_event(&mut self, el: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::InitialCount(count) => {
                 self.gallery.all = vec![ImageSlot::PendingMetadata; count];
                 self.gallery.filtered = vec![ImageSlot::PendingMetadata; count];
             }
             AppEvent::MetadataLoaded(idx, item) => {
+                if self.window.is_none() {
+                    let mut attributes =
+                        winit::window::Window::default_attributes().with_title("rsiv");
+
+                    #[cfg(any(
+                        target_os = "linux",
+                        target_os = "dragonfly",
+                        target_os = "freebsd",
+                        target_os = "netbsd",
+                        target_os = "openbsd"
+                    ))]
+                    {
+                        attributes =
+                            WindowAttributesExtWayland::with_name(attributes, "rsiv", "rsiv");
+                        attributes = WindowAttributesExtX11::with_name(attributes, "rsiv", "rsiv");
+                    }
+
+                    let window = Arc::new(el.create_window(attributes).unwrap());
+                    let size = window.inner_size();
+                    let surface_texture =
+                        SurfaceTexture::new(size.width, size.height, window.clone());
+                    let pixels = Pixels::new(size.width, size.height, surface_texture).unwrap();
+
+                    self.window = Some(window.clone());
+                    self.pixels = Some(pixels);
+
+                    let scale_factor = window.scale_factor();
+                    self.status_bar.set_scale(scale_factor as f32);
+                    self.cursor.next_icon = crate::app::build_cursor(el, true);
+                    self.cursor.prev_icon = crate::app::build_cursor(el, false);
+                }
+
                 if let Some(slot) = self.gallery.all.get_mut(idx) {
                     *slot = ImageSlot::MetadataLoaded(item.clone());
                 }
@@ -101,7 +106,7 @@ impl ApplicationHandler<AppEvent> for App {
 
                 if !has_valid_images {
                     crate::rsiv_err!("No images found. Exiting...");
-                    _el.exit();
+                    el.exit();
                 }
             }
             AppEvent::ImagePixelsLoaded(path, image) => {
@@ -246,7 +251,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Ipc(req, tx) => {
                 match req {
                     crate::ipc::IpcRequest::RunAction(action) => {
-                        let needs_redraw = self.dispatch_action(action, _el);
+                        let needs_redraw = self.dispatch_action(action, el);
                         if needs_redraw {
                             if let Some(w) = &self.window {
                                 w.request_redraw();
