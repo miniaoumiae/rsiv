@@ -9,6 +9,7 @@ pub enum CursorZone {
     None,
     Prev,
     Next,
+    Dragging,
 }
 
 pub struct CursorState {
@@ -73,6 +74,7 @@ impl CursorState {
                         w.set_cursor(CursorIcon::Default);
                     }
                 }
+                CursorZone::Dragging => w.set_cursor(CursorIcon::Grabbing),
                 CursorZone::None => w.set_cursor(CursorIcon::Default),
             };
         }
@@ -85,6 +87,11 @@ impl CursorState {
         input_mode: &InputMode,
         window: Option<&Arc<Window>>,
     ) {
+        if self.is_dragging {
+            self.set_zone(CursorZone::Dragging, window);
+            return;
+        }
+
         if let Some((x, _)) = self.pos {
             if self.is_in_next_zone(x, window_width, grid_mode, input_mode) {
                 self.set_zone(CursorZone::Next, window);

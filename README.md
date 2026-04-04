@@ -70,7 +70,7 @@ rsiv -o ~/Pictures | xargs -I {} cp {} ~/Selected/
 
 | Flag                    | Description                                        |
 | ----------------------- | -------------------------------------------------- |
-| `-q`, `--quiet`         | Suppress warnings and non-fatal errors             |
+| `-q`, `--quiet`         | Quiet mode: Suppress warnings and non-fatal errors |
 | `-r`, `--recursive`     | Recursively search directories for images.         |
 | `-H`, `--hidden`        | Include hidden files and directories.              |
 | `-d`, `--max-depth <N>` | Maximum recursion depth (requires `-r`).           |
@@ -140,8 +140,8 @@ See **[docs/IPC.md](./docs/IPC.md)** for details, supported actions, and socket 
 - [x] Memory usage optimization (`[options]`)
 - [x] Search/Filter mode
 - [x] Other files options (`%f`) in the handlers ?
+- [x] Mouse support ?
 - [ ] Config hot reload ?
-- [ ] Mouse support ?
 - [ ] Color filter (Gamma, Brightness, ...)
 - [ ] Other sorting modes (date, size..) `'[', ']'` to switch
 

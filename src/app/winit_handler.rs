@@ -427,6 +427,15 @@ impl ApplicationHandler<AppEvent> for App {
                                 self.cursor.drag_start_pos = Some((x, y));
                                 self.cursor.camera_start_pos =
                                     Some((self.camera.off_x, self.camera.off_y));
+                                if let Some(w) = &self.window {
+                                    let width = w.inner_size().width as f64;
+                                    self.cursor.refresh_icon(
+                                        width,
+                                        self.camera.grid_mode,
+                                        &self.input.mode,
+                                        Some(w),
+                                    );
+                                }
                             }
                         }
                     } else if self.cursor.is_dragging {
@@ -476,6 +485,15 @@ impl ApplicationHandler<AppEvent> for App {
                         self.cursor.is_dragging = false;
                         self.cursor.drag_start_pos = None;
                         self.cursor.camera_start_pos = None;
+                        if let Some(w) = &self.window {
+                            let width = w.inner_size().width as f64;
+                            self.cursor.refresh_icon(
+                                width,
+                                self.camera.grid_mode,
+                                &self.input.mode,
+                                Some(w),
+                            );
+                        }
                     }
                 } else if button == MouseButton::Right {
                     if state.is_pressed() {
