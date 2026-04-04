@@ -756,8 +756,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
 
-        if !self.camera.grid_mode && self.playback.is_playing && !self.gallery.filtered.is_empty()
-        {
+        if !self.camera.grid_mode && self.playback.is_playing && !self.gallery.filtered.is_empty() {
             if let ImageSlot::MetadataLoaded(item) =
                 &self.gallery.filtered[self.gallery.current_index]
             {

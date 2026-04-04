@@ -1,24 +1,26 @@
 use crate::app::AppEvent;
 use crate::image_item::ImageItem;
 use crate::loader::{identify_format, probe_image};
-use notify_debouncer_mini::{
-    new_debouncer,
-    notify::{RecursiveMode, Watcher},
-};
+use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode};
 use std::path::Path;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 use winit::event_loop::EventLoopProxy;
 
 pub struct FileWatcher {
-    debouncer:
-        Arc<Mutex<notify_debouncer_mini::Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>>>,
+    debouncer: Arc<
+        Mutex<notify_debouncer_mini::Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>>,
+    >,
     recursive: bool,
 }
 
 impl FileWatcher {
-    pub fn new(paths: Vec<String>, recursive: bool, proxy: EventLoopProxy<AppEvent>) -> Option<Self> {
+    pub fn new(
+        paths: Vec<String>,
+        recursive: bool,
+        proxy: EventLoopProxy<AppEvent>,
+    ) -> Option<Self> {
         let (tx, rx) = mpsc::channel();
 
         // Waits for the file to finish writing before telling the app.

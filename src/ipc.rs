@@ -56,7 +56,10 @@ impl fmt::Display for IpcError {
             Self::ServerError(msg) => write!(f, "Server error: {}", msg),
             Self::ConnectFailed(path) => write!(f, "Could not connect to instance at {:?}", path),
             Self::NoSuccess => {
-                write!(f, "Failed to send message. Target instances may have crashed.")
+                write!(
+                    f,
+                    "Failed to send message. Target instances may have crashed."
+                )
             }
         }
     }

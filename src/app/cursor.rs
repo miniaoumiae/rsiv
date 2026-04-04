@@ -1,6 +1,6 @@
 use crate::app::InputMode;
-use std::time::Instant;
 use std::sync::Arc;
+use std::time::Instant;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{CursorIcon, CustomCursor, Window};
 

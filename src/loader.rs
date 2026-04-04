@@ -8,8 +8,8 @@ use rayon::prelude::*;
 use resvg::usvg::{Options, Tree};
 use std::collections::VecDeque;
 use std::error::Error;
-use std::fs::File;
 use std::fmt;
+use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
@@ -32,7 +32,10 @@ pub enum LoaderError {
         available_mb: u64,
         min_free_mb: u64,
     },
-    PixmapAlloc { width: u32, height: u32 },
+    PixmapAlloc {
+        width: u32,
+        height: u32,
+    },
     Thumbnail(Box<LoaderError>),
 }
 
@@ -337,8 +340,10 @@ fn process_request(req: LoadRequest, proxy: &EventLoopProxy<AppEvent>) {
                     let _ = proxy.send_event(AppEvent::ThumbnailLoaded(path, Arc::new(thumb)));
                 }
                 Err(e) => {
-                    let _ =
-                        proxy.send_event(AppEvent::LoadError(path, LoaderError::Thumbnail(Box::new(e))));
+                    let _ = proxy.send_event(AppEvent::LoadError(
+                        path,
+                        LoaderError::Thumbnail(Box::new(e)),
+                    ));
                 }
             }
         }
@@ -402,8 +407,10 @@ fn load_thumbnail(
     let nwidth = nwidth.max(1);
     let nheight = nheight.max(1);
 
-    let mut pixmap = Pixmap::new(nwidth, nheight)
-        .ok_or(LoaderError::PixmapAlloc { width: nwidth, height: nheight })?;
+    let mut pixmap = Pixmap::new(nwidth, nheight).ok_or(LoaderError::PixmapAlloc {
+        width: nwidth,
+        height: nheight,
+    })?;
     let scale = nwidth as f32 / base_w as f32;
     let ts = Transform::from_scale(scale, scale);
     resvg::render(&tree, ts, &mut pixmap.as_mut());
