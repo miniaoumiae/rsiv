@@ -9,11 +9,8 @@
 
 - **Thumbnail Mode**: A fast, grid-based view to browse through directories.
 - **Format Support**: Supports static images, animated **GIFs/WebPs**, and **SVGs**.
-- **Instant Edits**: Image rotations and flips happen instantly without freezing the app.
 - **Script Handlers**: Easily run external shell commands on your images.
 - **Configuration**: Fully customizable keybindings and UI.
-- **Fast Rendering**: Hardware-accelerated drawing for crisp performance.
-- **Smart Memory Usage**: Automatically manages its memory based on a percentage of system's RAM.
 
 ## Key differences from `nsxiv`
 
