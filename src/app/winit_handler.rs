@@ -52,11 +52,27 @@ impl ApplicationHandler<AppEvent> for App {
                         attributes = WindowAttributesExtX11::with_name(attributes, "rsiv", "rsiv");
                     }
 
-                    let window = Arc::new(el.create_window(attributes).unwrap());
+                    let window = match el.create_window(attributes) {
+                        Ok(w) => Arc::new(w),
+                        Err(e) => {
+                            crate::rsiv_err!("Failed to create window: {}", e);
+                            el.exit();
+                            return;
+                        }
+                    };
+
                     let size = window.inner_size();
                     let surface_texture =
                         SurfaceTexture::new(size.width, size.height, window.clone());
-                    let pixels = Pixels::new(size.width, size.height, surface_texture).unwrap();
+
+                    let pixels = match Pixels::new(size.width, size.height, surface_texture) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            crate::rsiv_err!("Failed to initialize graphics backend: {}", e);
+                            el.exit();
+                            return;
+                        }
+                    };
 
                     self.window = Some(window.clone());
                     self.pixels = Some(pixels);
