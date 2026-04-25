@@ -6,7 +6,7 @@ mod render;
 mod winit_handler;
 
 pub use camera::Camera;
-pub use cursor::{CursorState, CursorZone, build_cursor};
+pub use cursor::{CursorState, CursorZone};
 pub use gallery::Gallery;
 
 use crate::cache::CacheManager;
@@ -156,8 +156,6 @@ impl App {
             cursor: CursorState {
                 pos: None,
                 zone: CursorZone::None,
-                next_icon: None,
-                prev_icon: None,
                 is_dragging: false,
                 drag_start_pos: None,
                 camera_start_pos: None,

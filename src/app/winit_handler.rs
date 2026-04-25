@@ -36,8 +36,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::MetadataLoaded(idx, item) => {
                 if self.window.is_none() {
-                    let mut attributes =
-                        winit::window::Window::default_attributes().with_title("rsiv");
+                    let attributes = winit::window::Window::default_attributes().with_title("rsiv");
 
                     #[cfg(any(
                         target_os = "linux",
@@ -79,8 +78,6 @@ impl ApplicationHandler<AppEvent> for App {
 
                     let scale_factor = window.scale_factor();
                     self.status_bar.set_scale(scale_factor as f32);
-                    self.cursor.next_icon = crate::app::build_cursor(el, true);
-                    self.cursor.prev_icon = crate::app::build_cursor(el, false);
                 }
 
                 if let Some(slot) = self.gallery.all.get_mut(idx) {
