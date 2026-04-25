@@ -3,7 +3,7 @@
 **rsiv** is a lightweight, high-performance image viewer for Linux. It aims to be a modern, stable, and easily configurable replacement for `nsxiv` (and `sxiv`).
 
 > [!WARNING]
-> While `rsiv` mirrors most `nsxiv` keybindings, some are no implemented or differ slightly. See [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for details.
+> While `rsiv` mirrors most `nsxiv` keybindings, some are not implemented or differ slightly. See [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for details.
 
 ## Features
 
@@ -33,7 +33,7 @@ rsiv --help
 
 Make sure to have `~/.cargo/bin` in your path
 
-If you want the `.desktop` too a justfile is provided.
+If you want the `.desktop` as well, a justfile is provided.
 
 ```sh
 just install
@@ -67,7 +67,7 @@ rsiv -o ~/Pictures | xargs -I {} cp {} ~/Selected/
 
 | Flag                    | Description                                        |
 | ----------------------- | -------------------------------------------------- |
-| `-q`, `--quiet`         | Quiet mode: Suppress warnings and non-fatal errors |
+| `-q`, `--quiet`         | Suppress warnings and non-fatal errors             |
 | `-r`, `--recursive`     | Recursively search directories for images.         |
 | `-H`, `--hidden`        | Include hidden files and directories.              |
 | `-d`, `--max-depth <N>` | Maximum recursion depth (requires `-r`).           |
@@ -121,6 +121,9 @@ See **[docs/IPC.md](./docs/IPC.md)** for details, supported actions, and socket 
 
 ## Features Roadmap
 
+- [ ] Config hot reload ?
+- [ ] Other sorting modes (date, size..) `'[', ']'` to switch
+- [ ] Color filter (Gamma, Brightness, ...)
 - [x] Image rendering
 - [x] Basic image view modes (zoom, adjust width, adjust height, fit best)
 - [x] Basic status bar
@@ -138,6 +141,3 @@ See **[docs/IPC.md](./docs/IPC.md)** for details, supported actions, and socket 
 - [x] Search/Filter mode
 - [x] Other files options (`%f`) in the handlers ?
 - [x] Mouse support ?
-- [ ] Config hot reload ?
-- [ ] Color filter (Gamma, Brightness, ...)
-- [ ] Other sorting modes (date, size..) `'[', ']'` to switch
